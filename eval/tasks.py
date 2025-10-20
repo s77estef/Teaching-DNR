@@ -34,7 +34,13 @@ class EthicsTask(BaseTask):
         self.subset = subset
 
     def load_split(self, split: str) -> Iterable[Example]:
-        ds = load_dataset("ethics", self.subset, split=split)
+        # ETHICS is hosted under the hendrycks namespace on the HF Hub
+        ds = load_dataset(
+            "hendrycks/ethics",
+            self.subset,
+            split=split,
+            trust_remote_code=True,  # dataset still relies on a remote loading script
+        )
         label_map = {0: "unacceptable", 1: "acceptable"}
         for row in ds:
             scenario = row.get("input") or row.get("observation") or row.get("context")
