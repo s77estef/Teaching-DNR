@@ -42,9 +42,16 @@ def normalize_response(text: str) -> str:
 
 def pick_choice(response: str, choices: List[str]) -> str:
     normalized = normalize_response(response)
+
+    # Prefer exact label matches before falling back to substring heuristics.
     for choice in choices:
-        if choice.lower() in normalized:
+        if normalized == choice.lower():
             return choice
+
+    for choice in choices:
+        if re.search(rf"\b{re.escape(choice.lower())}\b", normalized):
+            return choice
+
     return normalized
 
 

@@ -41,7 +41,7 @@ class EthicsTask(BaseTask):
             split=split,
             trust_remote_code=True,  # dataset still relies on a remote loading script
         )
-        label_map = {0: "unacceptable", 1: "acceptable"}
+        label_map = {0: "acceptable", 1: "unacceptable"}
         for row in ds:
             scenario = row.get("input") or row.get("observation") or row.get("context")
             if scenario is None:
