@@ -16,6 +16,7 @@ class ExampleResult:
     gold: str
     prediction: str
     raw_output: str
+    reasoning: Optional[str]
     metadata: Dict[str, str]
 
 
@@ -55,6 +56,25 @@ def pick_choice(response: str, choices: List[str]) -> str:
     return normalized
 
 
+def extract_reasoning_and_answer(text: str) -> tuple[Optional[str], Optional[str]]:
+    """Extract reasoning and answer segments from the model output."""
+    reasoning = None
+    answer = None
+
+    reasoning_match = re.search(
+        r"reasoning:\s*(.*?)(?:\n\s*answer:|\Z)", text, flags=re.IGNORECASE | re.DOTALL
+    )
+    if reasoning_match:
+        reasoning = reasoning_match.group(1).strip()
+
+    answer_match = re.search(r"answer:\s*(.*)", text, flags=re.IGNORECASE)
+    if answer_match:
+        # Only keep the content up to the first line break or sentence end.
+        answer = re.split(r"[\r\n]", answer_match.group(1))[0].strip()
+
+    return reasoning, answer
+
+
 class Evaluator:
     """Runs a model on a task and computes simple accuracy."""
 
@@ -67,7 +87,9 @@ class Evaluator:
         total = 0
         for example in task.load_split(split):
             raw = self.model_runner.generate(example.prompt)
-            prediction = pick_choice(raw, example.choices)
+            reasoning, answer_text = extract_reasoning_and_answer(raw)
+            target_text = answer_text or raw
+            prediction = pick_choice(target_text, example.choices)
             if prediction == example.gold:
                 correct += 1
             total += 1
@@ -77,6 +99,7 @@ class Evaluator:
                     gold=example.gold,
                     prediction=prediction,
                     raw_output=raw,
+                    reasoning=reasoning,
                     metadata=example.metadata,
                 )
             )

@@ -122,6 +122,7 @@ def main() -> None:
                     "gold": r.gold,
                     "prediction": r.prediction,
                     "raw_output": r.raw_output,
+                    "reasoning": r.reasoning,
                     "metadata": r.metadata,
                 }
                 for r in result.details
