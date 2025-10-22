@@ -1,1 +1,4 @@
 context.sty
+
+__pycache__/
+*.py[cod]
