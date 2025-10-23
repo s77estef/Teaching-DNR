@@ -19,7 +19,7 @@ pip install -r requirements.txt
 
 ## Running an evaluation
 
-The `run_evaluation.py` CLI evaluates an auto-regressive Hugging Face model on the ETHICS dataset. Example command:
+The `run_evaluation.py` CLI evaluates an auto-regressive Hugging Face model on the ETHICS dataset or Social Chemistry 101. Example commands:
 
 ```bash
 # LLAMA 3B instruct-style model on the ETHICS commonsense split
@@ -31,9 +31,18 @@ python run_evaluation.py \
   --torch-dtype bfloat16 \
   --device auto \
   --output results_llama_ethics.json
+
+# Qwen 4B chat model on Social Chemistry 101
+python run_evaluation.py \
+  --task social_chemistry \
+  --split validation \
+  --model Qwen/Qwen2-4B-Instruct \
+  --torch-dtype float16 \
+  --device auto \
+  --output results_qwen_social_chem.json
 ```
 
-The command will automatically download the required dataset split via the `datasets` library and the specified model weights via `transformers`. For chat-tuned checkpoints, the CLI uses the tokenizer's chat template by default; toggle `--no-chat-template` to disable that behaviour.
+Each command will automatically download the required dataset split via the `datasets` library and the specified model weights via `transformers`. For chat-tuned checkpoints, the CLI uses the tokenizer's chat template by default; toggle `--no-chat-template` to disable that behaviour.
 
 The summary accuracy is printed to stdout. When `--output` is provided, detailed per-example records (prompt, gold label, prediction, raw model output) are saved as JSON for further analysis.
 

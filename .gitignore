@@ -1,6 +1,6 @@
 context.sty
-
 example_run
+scrap.py
 
 __pycache__/
 *.py[cod]

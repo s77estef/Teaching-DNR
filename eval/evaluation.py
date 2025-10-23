@@ -35,9 +35,16 @@ class EvalResult:
 
 
 def normalize_response(text: str) -> str:
-    text = text.strip().lower()
-    text = re.split(r"[\n\r]", text)[0]
-    text = re.split(r"[.?!]", text)[0]
+    # Trim whitespace and only look at the first line of the response.
+    text = text.strip()
+    text = re.split(r"[\n\r]", text)[0].strip()
+
+    # Preserve numeric answers (e.g., -1.0) so we do not drop decimal points.
+    if re.fullmatch(r"-?\d+(?:\.\d+)?", text):
+        return text.lower()
+
+    text = text.lower()
+    text = re.sub(r"[.?!]+$", "", text)
     return text.strip()
 
 
