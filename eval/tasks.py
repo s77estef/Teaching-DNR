@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
 from typing import Dict, Iterable, List
 
 from datasets import load_dataset
@@ -78,20 +79,14 @@ class SocialChemistryTask(BaseTask):
     def __init__(self, version: str = "tasksource/social-chemestry-101") -> None:
         # The HF repo name is spelled "chemestry" in the Tasksource mirror.
         self.version = version
-
-    def load_split(self, split: str) -> Iterable[Example]:
-        ds = load_dataset(self.version, split=split)
-
-        allowed_labels: List[str] = []
-        seen_labels = set()
-        scenario_keys = (
+        self._scenario_keys = (
             "action",
             "situation",
             "rot",
             "characters",
             "area",
         )
-        label_keys = (
+        self._label_keys = (
             "action-moral-judgment",
             "rot-judgment",
             "action-agree",
@@ -99,35 +94,59 @@ class SocialChemistryTask(BaseTask):
             "m",
         )
 
+    @staticmethod
+    def _normalize_label(raw: str) -> str:
+        raw = raw.strip()
+        try:
+            num = Decimal(raw)
+        except InvalidOperation:
+            return raw.lower()
+        normalized = format(num.normalize(), "f")
+        if "." not in normalized:
+            normalized += ".0"
+        if normalized == "-0.0":
+            normalized = "0.0"
+        return normalized
+
+    def _extract_scenario(self, row: Dict[str, object]) -> str:
+        for key in self._scenario_keys:
+            value = row.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        raise ValueError("Unexpected Social Chemistry schema; missing scenario text.")
+
+    def _extract_label(self, row: Dict[str, object]) -> str:
+        for key in self._label_keys:
+            if key not in row:
+                continue
+            value = row[key]
+            if value is None:
+                continue
+            value_str = str(value).strip()
+            if value_str:
+                return self._normalize_label(value_str)
+        raise ValueError("Unexpected Social Chemistry schema; missing judgment label.")
+
+    def load_split(self, split: str) -> Iterable[Example]:
+        ds = load_dataset(self.version, split=split)
+
+        # Collect the full answer set before generating prompts so each example uses
+        # the same choice list.
+        judgment_set = set()
         for row in ds:
-            scenario = None
-            for key in scenario_keys:
-                value = row.get(key)
-                if isinstance(value, str) and value.strip():
-                    scenario = value.strip()
-                    break
-            if scenario is None:
-                raise ValueError("Unexpected Social Chemistry schema; missing scenario text.")
+            judgment_set.add(self._extract_label(row))
 
-            label_value = None
-            for key in label_keys:
-                if key in row:
-                    value = row[key]
-                    if value is None:
-                        continue
-                    value_str = str(value).strip()
-                    if value_str:
-                        label_value = value_str
-                        break
-            if label_value is None:
-                raise ValueError("Unexpected Social Chemistry schema; missing judgment label.")
+        def sort_key(label: str) -> tuple[int, str]:
+            try:
+                return (0, float(label))
+            except ValueError:
+                return (1, label)
 
-            gold_norm = label_value.lower()
-            if gold_norm not in seen_labels:
-                seen_labels.add(gold_norm)
-                allowed_labels.append(gold_norm)
+        choices = sorted(judgment_set, key=sort_key)
 
-            choices = sorted(seen_labels)
+        for row in ds:
+            scenario = self._extract_scenario(row)
+            gold = self._extract_label(row)
             prompt = (
                 "Evaluate the following social situation and rate its moral acceptability.\n"
                 "Provide short reasoning with a maximum of 60 words, then a separate answer.\n"
@@ -143,7 +162,7 @@ class SocialChemistryTask(BaseTask):
             yield Example(
                 prompt=prompt,
                 choices=choices,
-                gold=gold_norm,
+                gold=gold,
                 metadata={
                     "split": split,
                     "dataset": self.version,

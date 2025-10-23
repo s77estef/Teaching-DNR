@@ -39,6 +39,9 @@ def normalize_response(text: str) -> str:
     text = text.strip()
     text = re.split(r"[\n\r]", text)[0].strip()
 
+    # Remove common special tokens emitted by chat models (e.g., <|im_end|>).
+    text = re.sub(r"<\|.*?\|>", "", text).strip()
+
     # Preserve numeric answers (e.g., -1.0) so we do not drop decimal points.
     if re.fullmatch(r"-?\d+(?:\.\d+)?", text):
         return text.lower()
