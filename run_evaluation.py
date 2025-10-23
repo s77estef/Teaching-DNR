@@ -15,7 +15,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--task",
-        choices=["ethics", "delphi"],
+        choices=["ethics"],
         required=True,
         help="Task/dataset adapter to use.",
     )
