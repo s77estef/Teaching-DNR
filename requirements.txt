@@ -4,3 +4,4 @@ datasets>=2.18.0,<4.0.0
 torch>=2.1.0
 sentencepiece>=0.1.99
 einops>=0.8.0
+openai==2.7.1

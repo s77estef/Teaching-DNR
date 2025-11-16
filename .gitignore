@@ -1,7 +1,7 @@
 context.sty
 example_run
 scrap.py
-trash
+old
 
 __pycache__/
 *.py[cod]
