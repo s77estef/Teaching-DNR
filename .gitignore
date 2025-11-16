@@ -1,7 +1,8 @@
 context.sty
-example_run
 scrap.py
+cuda_check.py
 old
+prompt.txt
 
 __pycache__/
 *.py[cod]

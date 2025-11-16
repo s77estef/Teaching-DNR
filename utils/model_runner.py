@@ -19,8 +19,7 @@ from transformers import (
 class ModelConfig:
     """Configuration for loading a causal LM via Transformers.
 
-    The options are intentionally model-agnostic so you can swap in different HF
-    models (LLaMA, Qwen, etc.) without changing the calling code.
+    Model-agnostic options (works for LLaMA, Qwen, etc.), ignored if not needed
     """
 
     model_name_or_path: str
@@ -57,6 +56,7 @@ class GenerativeModelRunner:
             pad_token_id=self.tokenizer.pad_token_id,
         )
 
+    # make prompt
     def _prepare_prompt(self, prompt: str) -> str:
         if not self.config.use_chat_template or not hasattr(
             self.tokenizer, "apply_chat_template"
@@ -69,6 +69,7 @@ class GenerativeModelRunner:
             messages, tokenize=False, add_generation_prompt=True
         )
 
+    # genreate response
     def generate(self, prompt: str) -> str:
         prepared_prompt = self._prepare_prompt(prompt)
         inputs = self.tokenizer(prepared_prompt, return_tensors="pt").to(self.model.device)
