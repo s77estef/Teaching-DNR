@@ -157,7 +157,8 @@ if __name__ == "__main__":
     )
     model_name = os.getenv(
         "MODEL_NAME",
-        "meta-llama/Meta-Llama-3-8B-Instruct",
+        "Qwen/Qwen3-4B-Instruct-2507",
+        #"meta-llama/Meta-Llama-3-8B-Instruct",
     )
     config = ModelConfig(
         model_name_or_path=model_name,
@@ -168,9 +169,11 @@ if __name__ == "__main__":
         torch_dtype="bfloat16",
         use_chat_template=True,
     )
+
+    max_examples = 10
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     out_dir = Path(__file__).resolve().parent
-    output_file = out_dir / f"rewritten_prompts_sample_{timestamp}.json"
+    output_file = out_dir / f"rp_{max_examples}_{timestamp}.json"
     checkpoint_file = output_file.with_suffix(".checkpoint.jsonl")
 
     rewrite_dataset(
@@ -179,7 +182,7 @@ if __name__ == "__main__":
         output_path=output_file,
         dataset_name="PKU-Alignment/PKU-SafeRLHF",
         split="train",
-        max_examples=10,
+        max_examples=max_examples,
         checkpoint_path=checkpoint_file,
     )
     print(f"Wrote sample rewrites to {output_file} (checkpoint: {checkpoint_file})")
