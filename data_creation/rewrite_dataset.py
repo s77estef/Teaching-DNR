@@ -157,7 +157,8 @@ if __name__ == "__main__":
     )
     model_name = os.getenv(
         "MODEL_NAME",
-        "Qwen/Qwen3-4B-Instruct-2507",
+        "dphn/Dolphin3.0-Llama3.1-8B"
+        #"Qwen/Qwen3-4B-Instruct-2507",
         #"meta-llama/Meta-Llama-3-8B-Instruct",
     )
     config = ModelConfig(
@@ -170,7 +171,7 @@ if __name__ == "__main__":
         use_chat_template=True,
     )
 
-    max_examples = 10
+    max_examples = 100
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     out_dir = Path(__file__).resolve().parent
     output_file = out_dir / f"rp_{max_examples}_{timestamp}.json"
