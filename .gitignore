@@ -3,6 +3,7 @@ scrap.py
 cuda_check.py
 old
 prompt.txt
+fine_tune/Qwen2-0.5B-GRPO-test
 
 __pycache__/
 *.py[cod]

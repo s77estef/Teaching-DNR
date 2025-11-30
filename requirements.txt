@@ -1,7 +1,17 @@
-transformers>=4.40.0
-accelerate>=0.30.0
-datasets>=2.18.0,<4.0.0
-torch>=2.1.0
+# check: python -c "import module; print(module.__version__)"
+
+transformers==4.47.1
+trl==0.14.0
+datasets==3.2.0
+peft==0.14.0
+accelerate==1.2.1
+math_verify==0.3.3
+torch==2.9.0 # 2.9.0+cu128
+tensorboardX==2.6.4
+
 sentencepiece>=0.1.99
 einops>=0.8.0
 openai==2.7.1
+
+
+
