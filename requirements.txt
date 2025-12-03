@@ -1,6 +1,6 @@
 # check: python -c "import module; print(module.__version__)"
 
-transformers==4.47.1
+transformers==4.57.3
 trl==0.14.0
 datasets==3.2.0
 peft==0.14.0

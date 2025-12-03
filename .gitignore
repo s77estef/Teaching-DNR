@@ -4,6 +4,7 @@ cuda_check.py
 old
 prompt.txt
 fine_tune/Qwen2-0.5B-GRPO-test
+fine_tune/Qwen2-0.5B-GRPO-test_20251202_170230
 
 __pycache__/
 *.py[cod]
