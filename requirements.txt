@@ -1,12 +1,12 @@
 # check: python -c "import module; print(module.__version__)"
 
 transformers==4.57.3
-trl==0.14.0
-datasets==3.2.0
-peft==0.14.0
-accelerate==1.2.1
-math_verify==0.3.3
-torch==2.9.0 # 2.9.0+cu128
+trl==0.25.1
+datasets==4.4.1
+peft==0.18.0
+accelerate==1.12.0
+math_verify==0.8.0
+torch==2.9.1 # torch-2.9.1 triton-3.5.1
 tensorboardX==2.6.4
 
 sentencepiece>=0.1.99

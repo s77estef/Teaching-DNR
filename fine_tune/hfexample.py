@@ -23,10 +23,13 @@ TEST_PERCENT = 1
 MODEL_ID = "Qwen/Qwen3-4B-Instruct-2507"
 
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+model_name = MODEL_ID.split("/", 1)[-1]
 OUTPUT_DIR = os.path.join(
     os.path.dirname(__file__),
-    f"{MODEL_ID}-GRPO-test_{timestamp}",
+    "trained_experiments",
+    f"{model_name}-GRPO-test_{timestamp}",
 )
+
 
 # ------------------------------------
 
@@ -85,11 +88,12 @@ def hf_cli_login() -> None:
 # num_rows test: 1725
 def load_wildguard_dataset() -> Tuple[Dataset, Dataset]:
     train = load_dataset('allenai/wildguardmix', 'wildguardtrain', split=f"train[:{TRAIN_PERCENT}%]", columns=["prompt", "adversarial"])
+    #train = load_dataset('allenai/wildguardmix', 'wildguardtrain', split=f"train[:10]", columns=["prompt", "adversarial"])
     test = load_dataset('allenai/wildguardmix', 'wildguardtest', split=f"test[:{TEST_PERCENT}%]", columns=["prompt", "adversarial"])
     return train, test
 
 
-def attach_prompts_old(dataset: Dataset) -> Dataset:
+def attach_prompts_fsm(dataset: Dataset) -> Dataset:
     def make_conversation(example: Dict) -> Dict[str, List[Dict[str, str]]]:
         return {
             "prompt": [
@@ -101,11 +105,11 @@ def attach_prompts_old(dataset: Dataset) -> Dataset:
     dataset = dataset.map(make_conversation)
     return dataset
     
-def attach_prompts(dataset: Dataset) -> Dataset:
+def attach_prompts_sp(dataset: Dataset) -> Dataset:
     def make_conversation1(example: Dict) -> Dict[str, List[Dict[str, str]]]:
         return {
             "prompt": [
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": SYSTEM_PROMPT_FS},
                 {"role": "user", "content": example["prompt"]},
             ]
         }
@@ -142,7 +146,6 @@ def format_reward(completions: Sequence[Sequence[Dict[str, str]]], **_) -> List[
     pattern = r"^<think>.*?</think>\s*<answer>.*?</answer>$"
     completion_contents = [completion[0]["content"] for completion in completions]
     return [1.0 if re.match(pattern, content) else 0.0 for content in completion_contents]
-
 
 def accuracy_reward(completions: Sequence[Sequence[Dict[str, str]]], **kwargs) -> List[float]:
     solutions = kwargs["solution"]
@@ -224,7 +227,7 @@ def check_output():
         return generated_text, inference_duration, num_generated_tokens
     
     _, test_ds = load_wildguard_dataset()
-    test_ds = attach_prompts(test_ds)
+    test_ds = attach_prompts_sp(test_ds)
     prompt = test_ds['prompt'][0]
     print("PROMPT:", prompt)
 
@@ -241,10 +244,10 @@ def check_output():
 def main() -> None:
     hf_cli_login()
     train_ds, _ = load_wildguard_dataset()
-    train_ds = attach_prompts(train_ds)
+    train_ds = attach_prompts_sp(train_ds)
     print(train_ds)
-    #model = load_lora_model()
-    #trainer = run_trainer(model, train_ds, build_training_args())
+    model = load_lora_model()
+    trainer = run_trainer(model, train_ds, build_training_args())
     check_output()
 
 
