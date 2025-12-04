@@ -218,12 +218,17 @@ def build_training_args() -> GRPOConfig:
     )
 
 def run_trainer(model: torch.nn.Module, dataset: Dataset, training_args: GRPOConfig) -> GRPOTrainer:
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
-    tokenizer.padding_side = "left"
-    tokenizer.pad_token = tokenizer.eos_token  # if needed
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, padding_side="left")
+    tokenizer.pad_token = tokenizer.eos_token
+    def apply_chat_with_thinking(messages, **kwargs):
+        kwargs.setdefault("enable_thinking", True)
+        return tokenizer._orig_apply_chat_template(messages, **kwargs)
+    tokenizer._orig_apply_chat_template = tokenizer.apply_chat_template
+    tokenizer.apply_chat_template = apply_chat_with_thinking
 
     trainer = GRPOTrainer(
         model=model,
+        tokenizer=tokenizer, 
         reward_funcs=[format_reward_parts, accuracy_reward],
         args=training_args,
         train_dataset=dataset,
@@ -236,6 +241,13 @@ def check_output(num_samples: int = 5, adapter_path: str | None = None):
     base = AutoModelForCausalLM.from_pretrained(MODEL_ID, torch_dtype="auto", device_map="auto")
     tokenizer = AutoTokenizer.from_pretrained(adapter_path or MODEL_ID, padding_side="left")
     tokenizer.pad_token = tokenizer.eos_token
+    def apply_chat_with_thinking(messages, **kwargs):
+        kwargs.setdefault("enable_thinking", True)
+        return tokenizer._orig_apply_chat_template(messages, **kwargs)
+
+    tokenizer._orig_apply_chat_template = tokenizer.apply_chat_template
+    tokenizer.apply_chat_template = apply_chat_with_thinking
+
     model = PeftModel.from_pretrained(base, adapter_path) if adapter_path else base
 
     def generate_with_reasoning(messages):
@@ -279,8 +291,8 @@ def main() -> None:
     print(train_ds)
     #model = load_lora_model()
     #trainer = run_trainer(model, train_ds, build_training_args())
-    #check_output()
-    check_output(num_samples=10, adapter_path="fine_tune/trained_experiments/Qwen3-4B-Thinking-2507-GRPO-test_20251204_212101")
+    check_output()
+    #check_output(num_samples=10, adapter_path="fine_tune/trained_experiments/Qwen3-4B-Thinking-2507-GRPO-test_20251204_212101")
 
 
 if __name__ == "__main__":
