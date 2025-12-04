@@ -17,7 +17,7 @@ from trl import GRPOConfig, GRPOTrainer
 
 # ---- config settings ----
 
-TRAIN_PERCENT = 1
+TRAIN_SAMPLES = 1000
 TEST_PERCENT = 1
 #MODEL_ID = "Qwen/Qwen2-0.5B-Instruct"
 MODEL_ID = "Qwen/Qwen3-4B-Thinking-2507"
@@ -70,8 +70,8 @@ def hf_cli_login() -> None:
 # num_rows train: 86759
 # num_rows test: 1725
 def load_wildguard_dataset() -> Tuple[Dataset, Dataset]:
-    train = load_dataset('allenai/wildguardmix', 'wildguardtrain', split=f"train[:{TRAIN_PERCENT}%]", columns=["prompt", "adversarial"])
-    #train = load_dataset('allenai/wildguardmix', 'wildguardtrain', split=f"train[:10]", columns=["prompt", "adversarial"])
+    #train = load_dataset('allenai/wildguardmix', 'wildguardtrain', split=f"train[:{TRAIN_PERCENT}%]", columns=["prompt", "adversarial"])
+    train = load_dataset('allenai/wildguardmix', 'wildguardtrain', split=f"train[:{TRAIN_SAMPLES}]", columns=["prompt", "adversarial"])
     test = load_dataset('allenai/wildguardmix', 'wildguardtest', split=f"test[:{TEST_PERCENT}%]", columns=["prompt", "adversarial"])
     return train, test
 
@@ -80,7 +80,7 @@ def attach_prompts_sp(dataset: Dataset) -> Dataset:
     def make_conversation(example: Dict) -> Dict[str, List[Dict[str, str]]]:
         return {
             "prompt": [
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": SYSTEM_PROMPT_FS},
                 {"role": "user", "content": example["prompt"]},
             ]
         }
@@ -134,6 +134,54 @@ def format_reward(completions, **_):
         rewards.append(1.0 if THINK_PATTERN.search(final) else 0.0)
     return rewards
 
+
+def format_reward_parts(completions, **_):
+    THINK_OPEN = re.compile(r"<think>", re.IGNORECASE)
+    THINK_CLOSE = re.compile(r"</think>", re.IGNORECASE)
+    ANSWER_TAG = re.compile(r"<answer>\s*(true|false)\s*</answer>", re.IGNORECASE)
+    FULL_PATTERN = re.compile(
+        r"<think>.*?</think>.*?<answer>\s*(true|false)\s*</answer>",
+        re.DOTALL | re.IGNORECASE,
+    )
+    rewards = []
+    for completion in completions:
+        text = completion[0]["content"] or ""
+        reward = 0.0
+        # 1) Has an answer tag at all → big chunk of reward
+        if ANSWER_TAG.search(text):
+            reward += 0.4
+        # 2) Has a closing think tag → small reward
+        if THINK_CLOSE.search(text):
+            reward += 0.2
+        # 3) Has an opening think tag → small reward (this is what you want to grow!)
+        if THINK_OPEN.search(text):
+            reward += 0.2
+        # 4) Fully well-formed <think>...</think> + <answer>...</answer> → extra bonus
+        if FULL_PATTERN.search(text):
+            reward += 0.2
+        rewards.append(reward)
+    return rewards
+
+
+def format_reward_debug(completions, **_):
+    THINK_PATTERN = re.compile(
+        r"<think>.*?</think>\s*<answer>\s*(true|false)\s*</answer>",
+        re.DOTALL | re.IGNORECASE,
+    )
+    rewards = []
+
+    # DEBUG: print a couple of raw completions once
+    for i, completion in enumerate(completions[:3]):
+        print("DEBUG COMPLETION:", completion)
+        # expecting something like: [{"role": "assistant", "content": "..."}]
+
+    for completion in completions:
+        content = completion[0]["content"] or ""
+        rewards.append(1.0 if THINK_PATTERN.search(content) else 0.0)
+
+    return rewards
+
+
 def accuracy_reward(completions: Sequence[Sequence[Dict[str, str]]], **kwargs) -> List[float]:
     solutions = kwargs["solution"]
     completion_contents = [completion[0]["content"] for completion in completions]
@@ -165,7 +213,7 @@ def build_training_args() -> GRPOConfig:
         report_to=["tensorboard"],
         logging_steps=10,
         save_strategy="steps",
-        save_steps=50,
+        save_steps=10,
     )
 
 def run_trainer(model: torch.nn.Module, dataset: Dataset, training_args: GRPOConfig) -> GRPOTrainer:
@@ -175,12 +223,12 @@ def run_trainer(model: torch.nn.Module, dataset: Dataset, training_args: GRPOCon
 
     trainer = GRPOTrainer(
         model=model,
-        reward_funcs=[format_reward, accuracy_reward],
+        reward_funcs=[format_reward_parts, accuracy_reward],
         args=training_args,
         train_dataset=dataset,
     )
     trainer.train()
-    #trainer.save_model(training_args.output_dir)
+    trainer.save_model(training_args.output_dir)
     return trainer
 
 def check_output():
@@ -197,6 +245,7 @@ def check_output():
             messages,
             tokenize=False,
             add_generation_prompt=True,
+            enable_thinking=True,
         )
         inputs = trained_tokenizer(rendered, return_tensors="pt").to(trained_model.device)
         start_time = time.time()
