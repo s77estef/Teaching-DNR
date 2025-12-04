@@ -142,10 +142,20 @@ def load_lora_model() -> torch.nn.Module:
     return model
 
 
-def format_reward(completions: Sequence[Sequence[Dict[str, str]]], **_) -> List[float]:
-    pattern = r"^<think>.*?</think>\s*<answer>.*?</answer>$"
-    completion_contents = [completion[0]["content"] for completion in completions]
-    return [1.0 if re.match(pattern, content) else 0.0 for content in completion_contents]
+def format_reward(completions, **_):
+    THINK_PATTERN = re.compile(r"<think>.*?</think>\s*<answer>\s*(true|false)\s*</answer>", re.DOTALL | re.IGNORECASE)
+    rewards = []
+    for completion in completions:
+        text = completion[0]["content"] or ""
+        # keep only the final assistant segment
+        final = text.rsplit("assistant", 1)[-1]
+        if "<tool_call>" in final:
+            rewards.append(0.0)  # penalize tool_call usage
+            continue
+        rewards.append(1.0 if THINK_PATTERN.search(final) else 0.0)
+    return rewards
+
+
 
 def accuracy_reward(completions: Sequence[Sequence[Dict[str, str]]], **kwargs) -> List[float]:
     solutions = kwargs["solution"]
@@ -189,7 +199,7 @@ def run_trainer(model: torch.nn.Module, dataset: Dataset, training_args: GRPOCon
         train_dataset=dataset,
     )
     trainer.train()
-    trainer.save_model(training_args.output_dir)
+    #trainer.save_model(training_args.output_dir)
     return trainer
 
 def check_output():
