@@ -20,7 +20,8 @@ from trl import GRPOConfig, GRPOTrainer
 TRAIN_SAMPLES = 20000
 TEST_PERCENT = 1
 #MODEL_ID = "Qwen/Qwen2-0.5B-Instruct"
-MODEL_ID = "Qwen/Qwen3-4B-Thinking-2507"
+#MODEL_ID = "Qwen/Qwen3-4B-Thinking-2507"
+MODEL_ID = "Qwen/Qwen3-4B-Instruct-2507"
 #MODEL_ID = "Qwen/Qwen3-4B"
 
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -290,14 +291,18 @@ def check_output(num_samples: int = 5, adapter_path: str | None = None):
         return generated_text, inference_duration, num_generated_tokens
     
     _, test_ds = load_wildguard_dataset()
-    test_ds = attach_prompts_sp(test_ds)
-    samples = test_ds.select(range(min(num_samples, len(test_ds))))
-    for idx, prompt in enumerate(samples["prompt"]):
+    sample_count = min(num_samples, len(test_ds))
+    raw_samples = test_ds.select(range(sample_count))
+    prompts_ds = attach_prompts_sp(raw_samples)
+
+    for idx, (prompt, info) in enumerate(zip(prompts_ds["prompt"], raw_samples), 1):
         generated_text, dt, tokens = generate_with_reasoning(prompt)
-        print(f"\nSample {idx+1}")
-        print("PROMPT:", prompt)
-        print("RESPONSE:", generated_text.strip())
+        print(f"\nSample {idx}")
+        print(f"Prompt text: {info['prompt']}")
+        print(f"Gold label: {info['adversarial']}")
+        print(f"Model response: {generated_text.strip()}")
         print(f"Tokens: {tokens}, time: {dt:.2f}s")
+
 
 
 def main() -> None:
@@ -307,8 +312,8 @@ def main() -> None:
     print(train_ds)
     #model = load_lora_model()
     #trainer = run_trainer(model, train_ds, build_training_args())
-    #check_output()
-    check_output(num_samples=10, adapter_path="fine_tune/trained_experiments/Qwen3-4B-Thinking-2507-GRPO-test_20251204_231732")
+    check_output()
+    #check_output(num_samples=10, adapter_path="fine_tune/trained_experiments/Qwen3-4B-Thinking-2507-GRPO-test_20251204_231732")
 
 
 if __name__ == "__main__":
