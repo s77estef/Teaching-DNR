@@ -83,7 +83,6 @@ def load_wildguard_dataset(seed: int = 42) -> Tuple[Dataset, Dataset]:
     return train, test
 
 
-    
 def attach_prompts_sp(dataset: Dataset) -> Dataset:
     def make_conversation(example: Dict) -> Dict[str, List[Dict[str, str]]]:
         return {
@@ -106,14 +105,23 @@ def load_lora_model() -> torch.nn.Module:
     )
     lora_cfg = LoraConfig(
         task_type="CAUSAL_LM",
-        r=8,
+        r=16, # TODO try 8 and 16
         lora_alpha=32,
-        lora_dropout=0.1,
-        target_modules=["q_proj", "v_proj"],
+        lora_dropout=0.05, # TODO try higher dropout
+        target_modules=[
+            "q_proj",
+            "k_proj",
+            "v_proj",
+            "o_proj",
+            "gate_proj",
+            "up_proj",
+            "down_proj",
+        ],
     )
     model = get_peft_model(base, lora_cfg)
     model.print_trainable_parameters()
     return model
+
 
 """
 def length_reward(completions, **_):
@@ -171,19 +179,21 @@ def accuracy_reward(completions: Sequence[Sequence[Dict[str, str]]], **kwargs) -
 def build_training_args() -> GRPOConfig:
     return GRPOConfig(
         output_dir=OUTPUT_DIR,
-        learning_rate=1e-5,
+        learning_rate=1e-5, # TODO try different rates
         remove_unused_columns=False,
+        # if VRAM usage looks fine and training is stable, try higher later like 2 (and maybe reduce gradient_accumulation_steps to 8 to keep effective batch the same?)
+        per_device_train_batch_size=1,   # should be safe on 24GB?
         gradient_accumulation_steps=16,
         num_train_epochs=1,
         bf16=False, # not sure if GPU is bf16-capable
         fp16=True,  # flip to False if GPU is bf16-capable
-        max_completion_length=256, # TODO
+        max_completion_length=256,
         num_generations=4,
         max_prompt_length=256, # count tokens, otherwise gets truncated
         report_to=["tensorboard"],
         logging_steps=10,
         save_strategy="steps",
-        save_steps=10,
+        save_steps=20,
     )
 
 
