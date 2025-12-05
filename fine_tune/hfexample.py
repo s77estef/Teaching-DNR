@@ -18,7 +18,7 @@ from trl import GRPOConfig, GRPOTrainer
 # ---- config settings ----
 
 TRAIN_SAMPLES = 100
-TEST_PERCENT = 1
+TEST_SAMPLES = 1000
 #MODEL_ID = "Qwen/Qwen2-0.5B-Instruct"
 #MODEL_ID = "Qwen/Qwen3-4B-Thinking-2507"
 #MODEL_ID = "Qwen/Qwen3-4B-Instruct-2507"
@@ -72,11 +72,16 @@ def hf_cli_login() -> None:
 # features: ['prompt', 'adversarial', 'response', 'prompt_harm_label', 'response_refusal_label', 'response_harm_label', 'subcategory']
 # num_rows train: 86759
 # num_rows test: 1725
-def load_wildguard_dataset() -> Tuple[Dataset, Dataset]:
-    #train = load_dataset('allenai/wildguardmix', 'wildguardtrain', split=f"train[:{TRAIN_PERCENT}%]", columns=["prompt", "adversarial"])
-    train = load_dataset('allenai/wildguardmix', 'wildguardtrain', split=f"train[:{TRAIN_SAMPLES}]", columns=["prompt", "adversarial"])
-    test = load_dataset('allenai/wildguardmix', 'wildguardtest', split=f"test[:{TEST_PERCENT}%]", columns=["prompt", "adversarial"])
+def load_wildguard_dataset(seed: int = 42) -> Tuple[Dataset, Dataset]:
+    train = load_dataset("allenai/wildguardmix", "wildguardtrain", split="train", columns=["prompt", "adversarial"])
+    train = train.shuffle(seed=seed)
+    train = train.select(range(TRAIN_SAMPLES))
+
+    test = load_dataset("allenai/wildguardmix", "wildguardtest", split="test", columns=["prompt", "adversarial"])
+    test = test.shuffle(seed=seed)
+    test = test.select(range(TRAIN_SAMPLES))
     return train, test
+
 
     
 def attach_prompts_sp(dataset: Dataset) -> Dataset:
