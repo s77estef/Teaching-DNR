@@ -186,25 +186,6 @@ def build_training_args() -> GRPOConfig:
         save_steps=10,
     )
 
-def run_trainer_think(model: torch.nn.Module, dataset: Dataset, training_args: GRPOConfig) -> GRPOTrainer:
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, padding_side="left")
-    tokenizer.pad_token = tokenizer.eos_token
-    def apply_chat_with_thinking(messages, **kwargs):
-        kwargs.setdefault("enable_thinking", True)
-        return tokenizer._orig_apply_chat_template(messages, **kwargs)
-    tokenizer._orig_apply_chat_template = tokenizer.apply_chat_template
-    tokenizer.apply_chat_template = apply_chat_with_thinking
-
-    trainer = GRPOTrainer(
-        model=model,
-        processing_class=tokenizer, 
-        reward_funcs=[format_reward, accuracy_reward],
-        args=training_args,
-        train_dataset=dataset,
-    )
-    trainer.train()
-    trainer.save_model(training_args.output_dir)
-    return trainer
 
 def run_trainer(model: torch.nn.Module, dataset: Dataset, training_args: GRPOConfig) -> GRPOTrainer:
     tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, padding_side="left")
