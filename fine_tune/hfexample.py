@@ -17,12 +17,13 @@ from trl import GRPOConfig, GRPOTrainer
 
 # ---- config settings ----
 
-TRAIN_SAMPLES = 20000
+TRAIN_SAMPLES = 100
 TEST_PERCENT = 1
 #MODEL_ID = "Qwen/Qwen2-0.5B-Instruct"
 #MODEL_ID = "Qwen/Qwen3-4B-Thinking-2507"
-MODEL_ID = "Qwen/Qwen3-4B-Instruct-2507"
-#MODEL_ID = "Qwen/Qwen3-4B"
+#MODEL_ID = "Qwen/Qwen3-4B-Instruct-2507"
+MODEL_ID = "Qwen/Qwen3-4B"
+DEBUG = True
 
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 model_name = MODEL_ID.split("/", 1)[-1]
@@ -82,7 +83,7 @@ def attach_prompts_sp(dataset: Dataset) -> Dataset:
     def make_conversation(example: Dict) -> Dict[str, List[Dict[str, str]]]:
         return {
             "prompt": [
-                {"role": "system", "content": SYSTEM_PROMPT_FS},
+                {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": example["prompt"]},
             ]
         }
@@ -130,12 +131,34 @@ def length_reward(completions, **_):
 def format_reward(completions, **_):
     THINK_PATTERN = re.compile(r"<think>.*?</think>\s*<answer>\s*(true|false)\s*</answer>", re.DOTALL | re.IGNORECASE)
     rewards = []
+
+    if DEBUG:
+        # print a couple of raw completions once
+        for i, completion in enumerate(completions[:3]):
+            print("DEBUG COMPLETION:", completion)
+
     for completion in completions:
-        # grab the last assistant turn directly
         final = completion[0]["content"] or ""
         rewards.append(1.0 if THINK_PATTERN.search(final) else 0.0)
     return rewards
 
+def format_reward_debug(completions, **_):
+    THINK_PATTERN = re.compile(
+        r"<think>.*?</think>\s*<answer>\s*(true|false)\s*</answer>",
+        re.DOTALL | re.IGNORECASE,
+    )
+    rewards = []
+
+    # DEBUG: print a couple of raw completions once
+    for i, completion in enumerate(completions[:3]):
+        print("DEBUG COMPLETION:", completion)
+        # expecting something like: [{"role": "assistant", "content": "..."}]
+
+    for completion in completions:
+        content = completion[0]["content"] or ""
+        rewards.append(1.0 if THINK_PATTERN.search(content) else 0.0)
+
+    return rewards
 
 def format_reward_parts(completions, **_):
     THINK_OPEN = re.compile(r"<think>", re.IGNORECASE)
@@ -165,25 +188,6 @@ def format_reward_parts(completions, **_):
     return rewards
 
 
-def format_reward_debug(completions, **_):
-    THINK_PATTERN = re.compile(
-        r"<think>.*?</think>\s*<answer>\s*(true|false)\s*</answer>",
-        re.DOTALL | re.IGNORECASE,
-    )
-    rewards = []
-
-    # DEBUG: print a couple of raw completions once
-    for i, completion in enumerate(completions[:3]):
-        print("DEBUG COMPLETION:", completion)
-        # expecting something like: [{"role": "assistant", "content": "..."}]
-
-    for completion in completions:
-        content = completion[0]["content"] or ""
-        rewards.append(1.0 if THINK_PATTERN.search(content) else 0.0)
-
-    return rewards
-
-
 def accuracy_reward(completions: Sequence[Sequence[Dict[str, str]]], **kwargs) -> List[float]:
     solutions = kwargs["solution"]
     completion_contents = [completion[0]["content"] for completion in completions]
@@ -196,6 +200,10 @@ def accuracy_reward(completions: Sequence[Sequence[Dict[str, str]]], **kwargs) -
             continue
         prediction = match.group(1).lower()
         gold = "true" if bool(solution) else "false"
+        if DEBUG:
+            print("AR Solution:", solution)
+            print("AR Prediction:", prediction)
+            print("AR Gold:", gold)
         rewards.append(2.0 if prediction == gold else 0.0)
     return rewards
 
@@ -230,7 +238,7 @@ def run_trainer_think(model: torch.nn.Module, dataset: Dataset, training_args: G
     trainer = GRPOTrainer(
         model=model,
         processing_class=tokenizer, 
-        reward_funcs=[format_reward_parts, accuracy_reward],
+        reward_funcs=[format_reward, accuracy_reward],
         args=training_args,
         train_dataset=dataset,
     )
@@ -245,7 +253,7 @@ def run_trainer(model: torch.nn.Module, dataset: Dataset, training_args: GRPOCon
     trainer = GRPOTrainer(
         model=model,
         processing_class=tokenizer,
-        reward_funcs=[format_reward_parts, accuracy_reward],
+        reward_funcs=[format_reward, accuracy_reward],
         args=training_args,
         train_dataset=dataset,
     )
@@ -310,9 +318,10 @@ def main() -> None:
     train_ds, _ = load_wildguard_dataset()
     train_ds = attach_prompts_sp(train_ds)
     print(train_ds)
-    #model = load_lora_model()
-    #trainer = run_trainer(model, train_ds, build_training_args())
-    check_output()
+
+    model = load_lora_model()
+    trainer = run_trainer(model, train_ds, build_training_args())
+    #check_output()
     #check_output(num_samples=10, adapter_path="fine_tune/trained_experiments/Qwen3-4B-Thinking-2507-GRPO-test_20251204_231732")
 
 
