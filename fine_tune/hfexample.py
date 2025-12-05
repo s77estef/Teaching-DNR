@@ -147,51 +147,6 @@ def format_reward(completions, **_):
         rewards.append(1.0 if THINK_PATTERN.search(final) else 0.0)
     return rewards
 
-def format_reward_debug(completions, **_):
-    THINK_PATTERN = re.compile(
-        r"<think>.*?</think>\s*<answer>\s*(true|false)\s*</answer>",
-        re.DOTALL | re.IGNORECASE,
-    )
-    rewards = []
-
-    # DEBUG: print a couple of raw completions once
-    for i, completion in enumerate(completions[:3]):
-        print("DEBUG COMPLETION:", completion)
-        # expecting something like: [{"role": "assistant", "content": "..."}]
-
-    for completion in completions:
-        content = completion[0]["content"] or ""
-        rewards.append(1.0 if THINK_PATTERN.search(content) else 0.0)
-
-    return rewards
-
-def format_reward_parts(completions, **_):
-    THINK_OPEN = re.compile(r"<think>", re.IGNORECASE)
-    THINK_CLOSE = re.compile(r"</think>", re.IGNORECASE)
-    ANSWER_TAG = re.compile(r"<answer>\s*(true|false)\s*</answer>", re.IGNORECASE)
-    FULL_PATTERN = re.compile(
-        r"<think>.*?</think>.*?<answer>\s*(true|false)\s*</answer>",
-        re.DOTALL | re.IGNORECASE,
-    )
-    rewards = []
-    for completion in completions:
-        text = completion[0]["content"] or ""
-        reward = 0.0
-        # 1) Has an answer tag at all → big chunk of reward
-        if ANSWER_TAG.search(text):
-            reward += 0.4
-        # 2) Has a closing think tag → small reward
-        if THINK_CLOSE.search(text):
-            reward += 0.2
-        # 3) Has an opening think tag → small reward (this is what you want to grow!)
-        if THINK_OPEN.search(text):
-            reward += 0.2
-        # 4) Fully well-formed <think>...</think> + <answer>...</answer> → extra bonus
-        if FULL_PATTERN.search(text):
-            reward += 0.2
-        rewards.append(reward)
-    return rewards
-
 
 def accuracy_reward(completions: Sequence[Sequence[Dict[str, str]]], **kwargs) -> List[float]:
     solutions = kwargs["solution"]
