@@ -17,13 +17,13 @@ from trl import GRPOConfig, GRPOTrainer
 
 # ---- config settings ----
 
-TRAIN_SAMPLES = 100
+TRAIN_SAMPLES = 20000
 TEST_SAMPLES = 1000
 #MODEL_ID = "Qwen/Qwen2-0.5B-Instruct"
 #MODEL_ID = "Qwen/Qwen3-4B-Thinking-2507"
 #MODEL_ID = "Qwen/Qwen3-4B-Instruct-2507"
 MODEL_ID = "Qwen/Qwen3-4B"
-DEBUG = True
+DEBUG = False
 
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 model_name = MODEL_ID.split("/", 1)[-1]
@@ -79,7 +79,7 @@ def load_wildguard_dataset(seed: int = 42) -> Tuple[Dataset, Dataset]:
 
     test = load_dataset("allenai/wildguardmix", "wildguardtest", split="test", columns=["prompt", "adversarial"])
     test = test.shuffle(seed=seed)
-    test = test.select(range(TRAIN_SAMPLES))
+    test = test.select(range(TEST_SAMPLES))
     return train, test
 
 
@@ -161,7 +161,7 @@ def accuracy_reward(completions: Sequence[Sequence[Dict[str, str]]], **kwargs) -
 def build_training_args() -> GRPOConfig:
     return GRPOConfig(
         output_dir=OUTPUT_DIR,
-        learning_rate=1e-5, # TODO try different rates
+        learning_rate=1e-5, # TODO try different rates, possibly lower to 5e-6
         remove_unused_columns=False,
         # if VRAM usage looks fine and training is stable, try higher later like 2 (and maybe reduce gradient_accumulation_steps to 8 to keep effective batch the same?)
         per_device_train_batch_size=1,   # should be safe on 24GB?
