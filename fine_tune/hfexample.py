@@ -17,7 +17,7 @@ from trl import GRPOConfig, GRPOTrainer
 
 # ---- config settings ----
 
-TRAIN_SAMPLES = 1000
+TRAIN_SAMPLES = 20000
 TEST_PERCENT = 1
 #MODEL_ID = "Qwen/Qwen2-0.5B-Instruct"
 MODEL_ID = "Qwen/Qwen3-4B-Thinking-2507"
@@ -195,7 +195,7 @@ def accuracy_reward(completions: Sequence[Sequence[Dict[str, str]]], **kwargs) -
             continue
         prediction = match.group(1).lower()
         gold = "true" if bool(solution) else "false"
-        rewards.append(1.0 if prediction == gold else 0.0)
+        rewards.append(2.0 if prediction == gold else 0.0)
     return rewards
 
 
@@ -217,7 +217,7 @@ def build_training_args() -> GRPOConfig:
         save_steps=10,
     )
 
-def run_trainer(model: torch.nn.Module, dataset: Dataset, training_args: GRPOConfig) -> GRPOTrainer:
+def run_trainer_think(model: torch.nn.Module, dataset: Dataset, training_args: GRPOConfig) -> GRPOTrainer:
     tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, padding_side="left")
     tokenizer.pad_token = tokenizer.eos_token
     def apply_chat_with_thinking(messages, **kwargs):
@@ -228,7 +228,7 @@ def run_trainer(model: torch.nn.Module, dataset: Dataset, training_args: GRPOCon
 
     trainer = GRPOTrainer(
         model=model,
-        tokenizer=tokenizer, 
+        processing_class=tokenizer, 
         reward_funcs=[format_reward_parts, accuracy_reward],
         args=training_args,
         train_dataset=dataset,
@@ -236,6 +236,22 @@ def run_trainer(model: torch.nn.Module, dataset: Dataset, training_args: GRPOCon
     trainer.train()
     trainer.save_model(training_args.output_dir)
     return trainer
+
+def run_trainer(model: torch.nn.Module, dataset: Dataset, training_args: GRPOConfig) -> GRPOTrainer:
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, padding_side="left")
+    tokenizer.pad_token = tokenizer.eos_token
+
+    trainer = GRPOTrainer(
+        model=model,
+        processing_class=tokenizer,
+        reward_funcs=[format_reward_parts, accuracy_reward],
+        args=training_args,
+        train_dataset=dataset,
+    )
+    trainer.train()
+    trainer.save_model(training_args.output_dir)
+    return trainer
+
 
 def check_output(num_samples: int = 5, adapter_path: str | None = None):
     base = AutoModelForCausalLM.from_pretrained(MODEL_ID, torch_dtype="auto", device_map="auto")
@@ -291,8 +307,8 @@ def main() -> None:
     print(train_ds)
     #model = load_lora_model()
     #trainer = run_trainer(model, train_ds, build_training_args())
-    check_output()
-    #check_output(num_samples=10, adapter_path="fine_tune/trained_experiments/Qwen3-4B-Thinking-2507-GRPO-test_20251204_212101")
+    #check_output()
+    check_output(num_samples=10, adapter_path="fine_tune/trained_experiments/Qwen3-4B-Thinking-2507-GRPO-test_20251204_231732")
 
 
 if __name__ == "__main__":
