@@ -123,24 +123,6 @@ def load_lora_model() -> torch.nn.Module:
     return model
 
 
-"""
-def length_reward(completions, **_):
-    TARGET_LEN = 200
-    MAX_LEN = 256
-    rewards = []
-    for completion in completions:
-        length = len(completion[0]["content"].split())  # or count tokens
-        diff = length - TARGET_LEN
-        # e.g., Gaussian-like penalty centered at TARGET_LEN
-        reward = math.exp(-(diff ** 2) / (2 * (TARGET_LEN * 0.2) ** 2))  # 1 at target, decays away
-        # or linear penalty: reward = 1 - abs(diff) / TARGET_LEN
-        # clamp to negative when exceeding MAX_LEN
-        if length > MAX_LEN:
-            reward -= 0.5  # negative reward for very long generations
-        rewards.append(reward)
-    return rewards
-"""
-
 def format_reward(completions, **_):
     THINK_PATTERN = re.compile(r"<think>.*?</think>\s*<answer>\s*(true|false)\s*</answer>", re.DOTALL | re.IGNORECASE)
     rewards = []
