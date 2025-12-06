@@ -76,8 +76,6 @@ def load_wildguard_dataset(seed: int = 42) -> Tuple[Dataset, Dataset]:
     train = load_dataset("allenai/wildguardmix", "wildguardtrain", split="train", columns=["prompt", "adversarial"])
     train = train.shuffle(seed=seed)
     train = train.select(range(TRAIN_SAMPLES))
-    # TODO: delete later
-    #train = train.select(range(4000, TRAIN_SAMPLES)) # only cause i stopped one mid-training 
 
     test = load_dataset("allenai/wildguardmix", "wildguardtest", split="test", columns=["prompt", "adversarial"])
     test = test.shuffle(seed=seed)
@@ -107,10 +105,18 @@ def load_lora_model() -> torch.nn.Module:
     )
     lora_cfg = LoraConfig(
         task_type="CAUSAL_LM",
-        r=8, # TODO try 8 and 16
+        r=16,
         lora_alpha=32,
-        lora_dropout=0.1, # TODO try higher dropout
-        target_modules=["q_proj", "v_proj"],
+        lora_dropout=0.05, # TODO: possibly higher dropout with 0.1?
+        target_modules=[
+            "q_proj",
+            "k_proj",
+            "v_proj",
+            "o_proj",
+            "gate_proj",
+            "up_proj",
+            "down_proj",
+        ],
     )
     model = get_peft_model(base, lora_cfg)
     model.print_trainable_parameters()
@@ -158,17 +164,17 @@ def build_training_args() -> GRPOConfig:
         learning_rate=1e-5, # tried 5e-6
         remove_unused_columns=False,
         # if VRAM usage looks fine and training is stable, try higher later like 2 (and maybe reduce gradient_accumulation_steps to 8 to keep effective batch the same?)
+        #per_device_train_batch_size=1,
         gradient_accumulation_steps=16,
         num_train_epochs=1,
-        bf16=True, # not sure if GPU is bf16-capable
-        #fp16=True,  # flip to False if GPU is bf16-capable
+        bf16=True,
         max_completion_length=256,
         num_generations=4,
         max_prompt_length=256, # count tokens, otherwise gets truncated
         report_to=["tensorboard"],
         logging_steps=10,
         save_strategy="steps",
-        save_steps=20,
+        save_steps=50,
     )
 
 
@@ -184,8 +190,7 @@ def run_trainer(model: torch.nn.Module, dataset: Dataset, training_args: GRPOCon
         train_dataset=dataset,
     )
     trainer.train()
-    # TODO: delete later
-    #trainer.train(resume_from_checkpoint="fine_tune/trained_experiments/Qwen3-4B-GRPO-test_20251205_164937/checkpoint-1000")
+    #trainer.train(resume_from_checkpoint="fine_tune/trained_experiments/name_here/checkpoint-1000")
     trainer.save_model(training_args.output_dir)
     return trainer
 
