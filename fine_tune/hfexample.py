@@ -76,6 +76,8 @@ def load_wildguard_dataset(seed: int = 42) -> Tuple[Dataset, Dataset]:
     train = load_dataset("allenai/wildguardmix", "wildguardtrain", split="train", columns=["prompt", "adversarial"])
     train = train.shuffle(seed=seed)
     train = train.select(range(TRAIN_SAMPLES))
+    # TODO: delete later
+    #train = train.select(range(4000, TRAIN_SAMPLES)) # only cause i stopped one mid-training 
 
     test = load_dataset("allenai/wildguardmix", "wildguardtest", split="test", columns=["prompt", "adversarial"])
     test = test.shuffle(seed=seed)
@@ -105,18 +107,10 @@ def load_lora_model() -> torch.nn.Module:
     )
     lora_cfg = LoraConfig(
         task_type="CAUSAL_LM",
-        r=16, # TODO try 8 and 16
+        r=8, # TODO try 8 and 16
         lora_alpha=32,
-        lora_dropout=0.05, # TODO try higher dropout
-        target_modules=[
-            "q_proj",
-            "k_proj",
-            "v_proj",
-            "o_proj",
-            "gate_proj",
-            "up_proj",
-            "down_proj",
-        ],
+        lora_dropout=0.1, # TODO try higher dropout
+        target_modules=["q_proj", "v_proj"],
     )
     model = get_peft_model(base, lora_cfg)
     model.print_trainable_parameters()
@@ -154,21 +148,20 @@ def accuracy_reward(completions: Sequence[Sequence[Dict[str, str]]], **kwargs) -
             print("AR Solution:", solution)
             print("AR Prediction:", prediction)
             print("AR Gold:", gold)
-        rewards.append(2.0 if prediction == gold else 0.0)
+        rewards.append(1.0 if prediction == gold else 0.0)
     return rewards
 
 
 def build_training_args() -> GRPOConfig:
     return GRPOConfig(
         output_dir=OUTPUT_DIR,
-        learning_rate=1e-5, # TODO try different rates, possibly lower to 5e-6
+        learning_rate=1e-5, # tried 5e-6
         remove_unused_columns=False,
         # if VRAM usage looks fine and training is stable, try higher later like 2 (and maybe reduce gradient_accumulation_steps to 8 to keep effective batch the same?)
-        per_device_train_batch_size=1,   # should be safe on 24GB?
         gradient_accumulation_steps=16,
         num_train_epochs=1,
-        bf16=False, # not sure if GPU is bf16-capable
-        fp16=True,  # flip to False if GPU is bf16-capable
+        bf16=True, # not sure if GPU is bf16-capable
+        #fp16=True,  # flip to False if GPU is bf16-capable
         max_completion_length=256,
         num_generations=4,
         max_prompt_length=256, # count tokens, otherwise gets truncated
@@ -191,6 +184,8 @@ def run_trainer(model: torch.nn.Module, dataset: Dataset, training_args: GRPOCon
         train_dataset=dataset,
     )
     trainer.train()
+    # TODO: delete later
+    #trainer.train(resume_from_checkpoint="fine_tune/trained_experiments/Qwen3-4B-GRPO-test_20251205_164937/checkpoint-1000")
     trainer.save_model(training_args.output_dir)
     return trainer
 
@@ -255,7 +250,7 @@ def main() -> None:
     model = load_lora_model()
     trainer = run_trainer(model, train_ds, build_training_args())
     #check_output()
-    #check_output(num_samples=10, adapter_path="fine_tune/trained_experiments/Qwen3-4B-Thinking-2507-GRPO-test_20251204_231732")
+    #check_output(num_samples=10, adapter_path="fine_tune/trained_experiments/Qwen3-4B-GRPO-test_20251205_164937/checkpoint-1000")
 
 
 if __name__ == "__main__":
