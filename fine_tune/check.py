@@ -11,7 +11,6 @@ from fine_tune import hf_cli_login, load_wildguard_dataset, attach_prompts_sp, S
 
 # ---- config settings ----
 
-TEST_SAMPLES = 1000
 MODEL_ID = "Qwen/Qwen3-4B"
 PRINT_SAMPLES=10, 
 ADAPTER_PATH="fine_tune/trained_experiments/Qwen3-4B-GRPO-test_20251205_164937/checkpoint-1000"
@@ -29,14 +28,13 @@ ADAPTER_PATH="fine_tune/trained_experiments/Qwen3-4B-GRPO-test_20251205_164937/c
 def load_wildguard_test(seed: int = 42) -> Dataset:
     test = load_dataset("allenai/wildguardmix", "wildguardtest", split="test", columns=["prompt", "adversarial"])
     test = test.shuffle(seed=seed)
-    test = test.select(range(TEST_SAMPLES))
     return test
 
-def check_output(num_samples: int = 5, adapter_path: str | None = None):
+def check_output(print_samples: int = 5, adapter_path: str | None = None):
     """
     Docstring for check_output
-    :param num_samples: number of samples to print into json file (accuracy still with all samples)
-    :type num_samples: int
+    :param print_samples: number of samples to print into json file (accuracy still with all samples)
+    :type print_samples: int
     :param adapter_path: use trained model if not none, base model if none
     :type adapter_path: str | None
     """
@@ -69,8 +67,8 @@ def check_output(num_samples: int = 5, adapter_path: str | None = None):
         num_generated_tokens = output_ids.shape[1] - num_input_tokens
         return generated_text, inference_duration, num_generated_tokens
     
-    _, test_ds = load_wildguard_dataset()
-    sample_count = min(num_samples, len(test_ds))
+    _, test_ds = load_wildguard_test()
+    sample_count = min(print_samples, len(test_ds))
     raw_samples = test_ds.select(range(sample_count))
     prompts_ds = attach_prompts_sp(raw_samples)
 
@@ -84,10 +82,7 @@ def check_output(num_samples: int = 5, adapter_path: str | None = None):
 
 def main() -> None:
     hf_cli_login()
-    _, test_ds = load_wildguard_dataset()
-
-    #check_output()
-    #check_output(num_samples=10, adapter_path="fine_tune/trained_experiments/Qwen3-4B-GRPO-test_20251205_164937/checkpoint-1000")
+    check_output(print_samples=10, adapter_path=ADAPTER_PATH)
 
 
 if __name__ == "__main__":
