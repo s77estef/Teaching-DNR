@@ -1,9 +1,11 @@
 #!/usr/bin/env python
-import re
-from datetime import datetime
-import time
-from typing import Dict, List, Sequence, Tuple
+import json
 import os
+import re
+import time
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Sequence, Tuple
 import copy
 import math
 
@@ -32,6 +34,22 @@ OUTPUT_DIR = os.path.join(
     "trained_experiments",
     f"{model_name}-GRPO-test_{timestamp}",
 )
+GRPO_CONFIG_FILENAME = "grpo_config.json"
+GRPO_TRAINING_CONFIG = {
+    "output_dir": OUTPUT_DIR,
+    "learning_rate": 1e-5,
+    "remove_unused_columns": False,
+    "gradient_accumulation_steps": 16,
+    "num_train_epochs": 1,
+    "bf16": True,
+    "max_completion_length": 256,
+    "num_generations": 4,
+    "max_prompt_length": 256,
+    "report_to": ["tensorboard"],
+    "logging_steps": 10,
+    "save_strategy": "steps",
+    "save_steps": 25,
+}
 
 
 # ------------------------------------
@@ -159,28 +177,39 @@ def accuracy_reward(completions: Sequence[Sequence[Dict[str, str]]], **kwargs) -
 
 
 def build_training_args() -> GRPOConfig:
-    return GRPOConfig(
-        output_dir=OUTPUT_DIR,
-        learning_rate=1e-5, # tried 5e-6
-        remove_unused_columns=False,
-        # if VRAM usage looks fine and training is stable, try higher later like 2 (and maybe reduce gradient_accumulation_steps to 8 to keep effective batch the same?)
-        #per_device_train_batch_size=1,
-        gradient_accumulation_steps=16,
-        num_train_epochs=1,
-        bf16=True,
-        max_completion_length=256,
-        num_generations=4,
-        max_prompt_length=256, # count tokens, otherwise gets truncated
-        report_to=["tensorboard"],
-        logging_steps=10,
-        save_strategy="steps",
-        save_steps=50,
-    )
+    return GRPOConfig(**GRPO_TRAINING_CONFIG)
 
 
-def run_trainer(model: torch.nn.Module, dataset: Dataset, training_args: GRPOConfig) -> GRPOTrainer:
+def _write_grpo_config(config: Dict[str, Any], output_dir: str, results: Dict[str, Any] | None = None) -> Path:
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+    payload: Dict[str, Any] = {"config": config}
+    if results:
+        payload["results"] = results
+    config_path = output_path / GRPO_CONFIG_FILENAME
+    with config_path.open("w", encoding="utf-8") as fout:
+        json.dump(payload, fout, indent=2)
+    return config_path
+
+
+def _format_duration(seconds: float) -> str:
+    total_seconds = int(seconds)
+    hours, remainder = divmod(total_seconds, 3600)
+    minutes, secs = divmod(remainder, 60)
+    return f"{hours}:{minutes:02d}:{secs:02d}"
+
+
+def run_trainer(
+    model: torch.nn.Module,
+    dataset: Dataset,
+    training_args: GRPOConfig,
+    training_config: Dict[str, Any] | None = None,
+) -> GRPOTrainer:
     tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, padding_side="left")
     tokenizer.pad_token = tokenizer.eos_token
+
+    config_for_log = copy.deepcopy(training_config or GRPO_TRAINING_CONFIG)
+    _write_grpo_config(config_for_log, training_args.output_dir)
 
     trainer = GRPOTrainer(
         model=model,
@@ -189,9 +218,16 @@ def run_trainer(model: torch.nn.Module, dataset: Dataset, training_args: GRPOCon
         args=training_args,
         train_dataset=dataset,
     )
+    start_time = time.time()
     trainer.train()
+    elapsed = time.time() - start_time
     #trainer.train(resume_from_checkpoint="fine_tune/trained_experiments/name_here/checkpoint-1000")
     trainer.save_model(training_args.output_dir)
+    final_results = {
+        "final_steps": trainer.state.global_step,
+        "training_time": _format_duration(elapsed),
+    }
+    _write_grpo_config(config_for_log, training_args.output_dir, final_results)
     return trainer
 
 
@@ -202,7 +238,8 @@ def main() -> None:
     print(train_ds)
 
     model = load_lora_model()
-    trainer = run_trainer(model, train_ds, build_training_args())
+    training_args = build_training_args()
+    trainer = run_trainer(model, train_ds, training_args, GRPO_TRAINING_CONFIG)
     #check_output()
     #check_output(num_samples=10, adapter_path="fine_tune/trained_experiments/Qwen3-4B-GRPO-test_20251205_164937/checkpoint-1000")
 
