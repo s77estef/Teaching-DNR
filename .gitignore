@@ -5,7 +5,9 @@ old
 prompt.txt
 fine_tune/wildguard.py
 fine_tune/trained_experiments
+fine_tune/eval
 fine_tune/count_tokens.py
+
 
 __pycache__/
 *.py[cod]
