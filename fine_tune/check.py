@@ -9,19 +9,22 @@ import torch
 from datasets import Dataset, load_dataset
 from peft import PeftModel
 from transformers import AutoModelForCausalLM, AutoTokenizer
+from tqdm.auto import tqdm
 
-from fine_tune.hfexample import attach_prompts_sp, hf_cli_login, SYSTEM_PROMPT
+from hfexample import attach_prompts_sp, hf_cli_login, SYSTEM_PROMPT
 
 # ---- config settings ----
 
 MODEL_ID = "Qwen/Qwen3-4B"
-PRINT_SAMPLES = 10
-ADAPTER_PATH = "fine_tune/trained_experiments/Qwen3-4B-GRPO-test_20251205_164937/checkpoint-1000"
+PRINT_SAMPLES = 1725
+TEST_SAMPLES = 1725
+ADAPTER_PATH = "fine_tune/trained_experiments/Qwen3-4B-GRPO-test_20251205_164937_195803_merged/checkpoint-3000"
+#ADAPTER_PATH = "fine_tune/trained_experiments/Qwen3-4B-GRPO-test_20251206_094610/checkpoint-625"
 
 DATASET_NAME = "allenai/wildguardmix"
 DATASET_CONFIG = "wildguardtest"
 DATASET_SPLIT = "test"
-RESULTS_DIR = Path(__file__).resolve().parent.parent / "results"
+RESULTS_DIR = Path(__file__).resolve().parent / "eval"
 GENERATION_CONFIG = {
     "max_new_tokens": 256,
     "temperature": 0.7,
@@ -34,15 +37,6 @@ FORMAT_PATTERN = re.compile(
 )
 
 
-# TODO: make dataset loading with number as argument
-# TODO: make write out into json file
-# - model used
-# - model config for generation
-# - system prompt used
-# - dataset, split, number of samples -> should be full test set
-# - accuracy of predicting gold
-# - optional: comparison between trained and base model 
-
 def load_wildguard_test(seed: int = 42) -> Dataset:
     test = load_dataset(
         DATASET_NAME,
@@ -51,6 +45,9 @@ def load_wildguard_test(seed: int = 42) -> Dataset:
         columns=["prompt", "adversarial"],
     )
     test = test.shuffle(seed=seed)
+    if TEST_SAMPLES is not None:
+        sample_count = min(TEST_SAMPLES, len(test))
+        test = test.select(range(sample_count))
     return test
 
 def _extract_prediction(text: str) -> str | None:
@@ -116,8 +113,10 @@ def check_output(
     label_matches = 0
     format_matches = 0
     reported = []
+    wrong_label_samples = []
+    wrong_format_samples = []
 
-    for idx in range(total_samples):
+    for idx in tqdm(range(total_samples), desc="Evaluating", unit="sample"):
         conversation = prompts_ds[idx]["prompt"]
         example = test_ds[idx]
         generated_text, dt, tokens = generate_with_reasoning(conversation)
@@ -130,20 +129,26 @@ def check_output(
         label_matches += int(matches)
         format_matches += int(format_ok)
 
+        sample_entry = {
+            "sample_id": idx + 1,
+            "prompt": example["prompt"],
+            "gold_label": gold_label,
+            "predicted_label": prediction,
+            "labels_match": matches,
+            "format_correct": format_ok,
+            "model_response": generated_text.strip(),
+            "generated_tokens": tokens,
+            "inference_seconds": dt,
+        }
+
         if idx < report_samples:
-            reported.append(
-                {
-                    "sample_id": idx + 1,
-                    "prompt": example["prompt"],
-                    "gold_label": gold_label,
-                    "predicted_label": prediction,
-                    "labels_match": matches,
-                    "format_correct": format_ok,
-                    "model_response": generated_text.strip(),
-                    "generated_tokens": tokens,
-                    "inference_seconds": dt,
-                }
-            )
+            reported.append(sample_entry)
+
+        if not matches:
+            wrong_label_samples.append(sample_entry)
+
+        if not format_ok:
+            wrong_format_samples.append(sample_entry)
 
     accuracy = label_matches / total_samples if total_samples else 0.0
     format_accuracy = format_matches / total_samples if total_samples else 0.0
@@ -161,6 +166,7 @@ def check_output(
                 "name": DATASET_NAME,
                 "config": DATASET_CONFIG,
                 "split": DATASET_SPLIT,
+                "sample_limit": TEST_SAMPLES,
                 "total_samples": total_samples,
                 "reported_samples": report_samples,
             },
@@ -171,6 +177,8 @@ def check_output(
             "timestamp_utc": timestamp,
         },
         "samples": reported,
+        "wrong_label_samples": wrong_label_samples,
+        "wrong_format_samples": wrong_format_samples,
     }
 
     with output_path.open("w", encoding="utf-8") as fout:
