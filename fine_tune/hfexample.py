@@ -195,57 +195,6 @@ def run_trainer(model: torch.nn.Module, dataset: Dataset, training_args: GRPOCon
     return trainer
 
 
-def check_output(num_samples: int = 5, adapter_path: str | None = None):
-    base = AutoModelForCausalLM.from_pretrained(MODEL_ID, torch_dtype="auto", device_map="auto")
-    tokenizer = AutoTokenizer.from_pretrained(adapter_path or MODEL_ID, padding_side="left")
-    tokenizer.pad_token = tokenizer.eos_token
-    def apply_chat_with_thinking(messages, **kwargs):
-        kwargs.setdefault("enable_thinking", True)
-        return tokenizer._orig_apply_chat_template(messages, **kwargs)
-
-    tokenizer._orig_apply_chat_template = tokenizer.apply_chat_template
-    tokenizer.apply_chat_template = apply_chat_with_thinking
-
-    model = PeftModel.from_pretrained(base, adapter_path) if adapter_path else base
-
-    def generate_with_reasoning(messages):
-        rendered = tokenizer.apply_chat_template(
-            messages,
-            tokenize=False,
-            add_generation_prompt=True,
-        )
-        inputs = tokenizer(rendered, return_tensors="pt").to(model.device)
-        start_time = time.time()
-        with torch.no_grad():
-            output_ids = model.generate(
-                **inputs,
-                max_new_tokens=256,
-                temperature=0.7,
-                eos_token_id=tokenizer.eos_token_id,
-            )
-        end_time = time.time()
-        gen_tokens = output_ids[0, inputs["input_ids"].shape[1]:]
-        generated_text = tokenizer.decode(gen_tokens, skip_special_tokens=True)
-        inference_duration = end_time - start_time
-        num_input_tokens = inputs['input_ids'].shape[1]
-        num_generated_tokens = output_ids.shape[1] - num_input_tokens
-        return generated_text, inference_duration, num_generated_tokens
-    
-    _, test_ds = load_wildguard_dataset()
-    sample_count = min(num_samples, len(test_ds))
-    raw_samples = test_ds.select(range(sample_count))
-    prompts_ds = attach_prompts_sp(raw_samples)
-
-    for idx, (prompt, info) in enumerate(zip(prompts_ds["prompt"], raw_samples), 1):
-        generated_text, dt, tokens = generate_with_reasoning(prompt)
-        print(f"\nSample {idx}")
-        print(f"Prompt text: {info['prompt']}")
-        print(f"Gold label: {info['adversarial']}")
-        print(f"Model response: {generated_text.strip()}")
-        print(f"Tokens: {tokens}, time: {dt:.2f}s")
-
-
-
 def main() -> None:
     hf_cli_login()
     train_ds, _ = load_wildguard_dataset()
