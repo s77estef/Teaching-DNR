@@ -18,8 +18,9 @@ from hfexample import attach_prompts_sp, hf_cli_login, SYSTEM_PROMPT
 MODEL_ID = "Qwen/Qwen3-4B"
 PRINT_SAMPLES = 1725
 TEST_SAMPLES = 1725
-ADAPTER_PATH = "fine_tune/trained_experiments/Qwen3-4B-GRPO-test_20251205_164937_195803_merged/checkpoint-3000"
+#ADAPTER_PATH = "fine_tune/trained_experiments/Qwen3-4B-GRPO-test_20251205_164937_195803_merged/checkpoint-3000"
 #ADAPTER_PATH = "fine_tune/trained_experiments/Qwen3-4B-GRPO-test_20251206_094610/checkpoint-625"
+ADAPTER_PATH = "fine_tune/trained_experiments/Qwen3-4B-GRPO-test_20251206_231028/checkpoint-625"
 
 DATASET_NAME = "allenai/wildguardmix"
 DATASET_CONFIG = "wildguardtest"

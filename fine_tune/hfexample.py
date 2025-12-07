@@ -39,6 +39,7 @@ GRPO_TRAINING_CONFIG = {
     "output_dir": OUTPUT_DIR,
     "learning_rate": 1e-5,
     "remove_unused_columns": False,
+    "per_device_train_batch_size": 8,
     "gradient_accumulation_steps": 16,
     "num_train_epochs": 1,
     "bf16": True,
