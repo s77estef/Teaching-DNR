@@ -11,7 +11,7 @@ from peft import PeftModel
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from tqdm.auto import tqdm
 
-from hfexample import attach_prompts_sp, hf_cli_login, SYSTEM_PROMPT
+from fine_tune.fine_tune_grpo_label import attach_prompts_sp, hf_cli_login, SYSTEM_PROMPT
 
 # ---- config settings ----
 
