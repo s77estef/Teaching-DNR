@@ -5,7 +5,9 @@ fine_tune/wildguard.py
 fine_tune/trained_experiments
 fine_tune/eval
 fine_tune/count_tokens.py
-
+environment_scratch.yml
+environment.yml
+minimal_env.txt
 
 __pycache__/
 *.py[cod]
