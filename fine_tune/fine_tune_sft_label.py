@@ -4,19 +4,20 @@ import os
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Sequence, Tuple
+from typing import Any, Dict, List, Tuple
 import copy
 
 import torch
 from datasets import Dataset, load_dataset
 from huggingface_hub import login
-from peft import LoraConfig, get_peft_model, PeftModel
+from peft import LoraConfig, get_peft_model
 from transformers import AutoTokenizer, AutoModelForCausalLM
-from trl import SFTConfig, SFTTrainer, DataCollatorForCompletionOnlyLM
+from trl import SFTConfig, SFTTrainer
+
 
 # ---- config settings ----
 
-TRAIN_SAMPLES = 20000
+TRAIN_SAMPLES = 100
 TEST_SAMPLES = 1000
 #MODEL_ID = "Qwen/Qwen2-0.5B-Instruct"
 #MODEL_ID = "Qwen/Qwen3-4B-Thinking-2507"
@@ -40,7 +41,10 @@ SFT_TRAINING_CONFIG = {
     "gradient_accumulation_steps": 16,
     "num_train_epochs": 1,
     "bf16": True,
-    "max_seq_length": 256,
+    "max_length": 256,
+    #"dataset_text_field": "text",
+    #"assistant_only_loss": True,        # for chat-style datasets
+    "completion_only_loss": True,      # for prompt/completion datasets
     # "packing": False
     # "gradient_checkpointing": True
     "report_to": ["tensorboard"],
@@ -100,7 +104,7 @@ def load_wildguard_dataset(seed: int = 42) -> Tuple[Dataset, Dataset]:
 
 # SFTTrainer expects either a formatting_func or a single text field
 
-
+"""
 def attach_prompts(dataset: Dataset) -> Dataset:
     def make_text(example: Dict[str, Any]) -> Dict[str, str]:
         label = "true" if example["adversarial"] else "false"
@@ -111,7 +115,6 @@ def attach_prompts(dataset: Dataset) -> Dataset:
         ]
         return {"text": "\n".join(messages)}
     return dataset.map(make_text, remove_columns=["adversarial"])
-
 """
 def attach_prompts(dataset: Dataset) -> Dataset:
     def make_conversation(example: Dict) -> Dict[str, List[Dict[str, str]]]:
@@ -125,7 +128,16 @@ def attach_prompts(dataset: Dataset) -> Dataset:
                 {"role": "assistant", "content": f"<think></think><answer>{label}</answer>"}
             ],
         }
-    return dataset.map(make_conversation)
+    return dataset.map(make_conversation, remove_columns=["adversarial"])
+
+"""
+def conversation_formatter(batch):
+    outputs = []
+    for sample in batch:
+        convo = "".join(f"{turn['content']}\n" for turn in sample["prompt"])
+        completion = sample["completion"][0]["content"]
+        outputs.append(convo + completion)
+    return outputs
 """
 
 def load_lora_model() -> torch.nn.Module:
@@ -188,27 +200,18 @@ def run_trainer(
     tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, padding_side="left")
     tokenizer.pad_token = tokenizer.eos_token
 
-    response_template = "<|assistant|>"
-    collator = DataCollatorForCompletionOnlyLM(
-        response_template=response_template,
-        tokenizer=tokenizer,
-    )
-
     config_for_log = copy.deepcopy(training_config or SFT_TRAINING_CONFIG)
     _write_sft_config(config_for_log, training_args.output_dir)
 
     trainer = SFTTrainer(
         model=model,
-        tokenizer=tokenizer,
+        processing_class=tokenizer,
         args=training_args,
         train_dataset=dataset,
-        data_collator=collator,
-        #formatting_func=,
-        dataset_text_field="text",
+        #formatting_func=conversation_formatter,
     )
     start_time = time.time()
-    #trainer.train()
-    trainer.train(max_steps=1) # smoke test
+    trainer.train()
     #trainer.train(resume_from_checkpoint="fine_tune/trained_experiments/name_here/checkpoint-1000")
     elapsed = time.time() - start_time
     trainer.save_model(training_args.output_dir)
