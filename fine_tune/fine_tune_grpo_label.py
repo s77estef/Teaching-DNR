@@ -102,7 +102,7 @@ def load_wildguard_dataset(seed: int = 42) -> Tuple[Dataset, Dataset]:
     return train, test
 
 
-def attach_prompts_sp(dataset: Dataset) -> Dataset:
+def attach_prompts(dataset: Dataset) -> Dataset:
     def make_conversation(example: Dict) -> Dict[str, List[Dict[str, str]]]:
         return {
             "prompt": [
@@ -180,7 +180,7 @@ def accuracy_reward(completions: Sequence[Sequence[Dict[str, str]]], **kwargs) -
 def build_training_args() -> GRPOConfig:
     return GRPOConfig(**GRPO_TRAINING_CONFIG)
 
-
+# only for training documentation
 def _write_grpo_config(config: Dict[str, Any], output_dir: str, results: Dict[str, Any] | None = None) -> Path:
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
@@ -192,7 +192,7 @@ def _write_grpo_config(config: Dict[str, Any], output_dir: str, results: Dict[st
         json.dump(payload, fout, indent=2)
     return config_path
 
-
+# only for training documentation
 def _format_duration(seconds: float) -> str:
     total_seconds = int(seconds)
     hours, remainder = divmod(total_seconds, 3600)
@@ -235,7 +235,7 @@ def run_trainer(
 def main() -> None:
     hf_cli_login()
     train_ds, _ = load_wildguard_dataset()
-    train_ds = attach_prompts_sp(train_ds)
+    train_ds = attach_prompts(train_ds)
     print(train_ds)
 
     model = load_lora_model()
