@@ -42,11 +42,7 @@ SFT_TRAINING_CONFIG = {
     "num_train_epochs": 1,
     "bf16": True,
     "max_length": 256,
-    #"dataset_text_field": "text",
-    #"assistant_only_loss": True,        # for chat-style datasets
-    "completion_only_loss": True,      # for prompt/completion datasets
-    # "packing": False
-    # "gradient_checkpointing": True
+    "completion_only_loss": True,
     "report_to": ["tensorboard"],
     "logging_steps": 10,
     "save_strategy": "steps",
@@ -102,20 +98,7 @@ def load_wildguard_dataset(seed: int = 42) -> Tuple[Dataset, Dataset]:
     test = test.select(range(TEST_SAMPLES))
     return train, test
 
-# SFTTrainer expects either a formatting_func or a single text field
 
-"""
-def attach_prompts(dataset: Dataset) -> Dataset:
-    def make_text(example: Dict[str, Any]) -> Dict[str, str]:
-        label = "true" if example["adversarial"] else "false"
-        messages = [
-            f"<|system|>\n{SYSTEM_PROMPT}\n",
-            f"<|user|>\n{example['prompt']}\n",
-            f"<|assistant|>\n<think></think><answer>{label}</answer>",
-        ]
-        return {"text": "\n".join(messages)}
-    return dataset.map(make_text, remove_columns=["adversarial"])
-"""
 def attach_prompts(dataset: Dataset) -> Dataset:
     def make_conversation(example: Dict) -> Dict[str, List[Dict[str, str]]]:
         label = "true" if example["adversarial"] else "false"
@@ -130,15 +113,6 @@ def attach_prompts(dataset: Dataset) -> Dataset:
         }
     return dataset.map(make_conversation, remove_columns=["adversarial"])
 
-"""
-def conversation_formatter(batch):
-    outputs = []
-    for sample in batch:
-        convo = "".join(f"{turn['content']}\n" for turn in sample["prompt"])
-        completion = sample["completion"][0]["content"]
-        outputs.append(convo + completion)
-    return outputs
-"""
 
 def load_lora_model() -> torch.nn.Module:
     device = "cuda" if torch.cuda.is_available() else "cpu"
