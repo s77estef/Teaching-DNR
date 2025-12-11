@@ -1,0 +1,20 @@
+program: fine_tune_sft_label.py      # your training script
+method: bayes               # or "random" or "grid"
+
+metric:
+  name: eval/mean_reward    # name of the metric you log
+  goal: maximize            # or "minimize"
+
+parameters:
+  learning_rate:
+    distribution: log_uniform_values
+    min: 1e-6
+    max: 3e-4
+
+  batch_size:
+    values: [8, 16, 32]
+
+#  kl_penalty:
+#    distribution: log_uniform_values
+#    min: 0.01
+#    max: 0.3
