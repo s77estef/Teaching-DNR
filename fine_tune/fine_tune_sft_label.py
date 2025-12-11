@@ -6,6 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 import copy
+import wandb
 
 import torch
 from datasets import Dataset, load_dataset
@@ -17,7 +18,7 @@ from trl import SFTConfig, SFTTrainer
 
 # ---- config settings ----
 
-TRAIN_SAMPLES = 100
+TRAIN_SAMPLES = 20000
 TEST_SAMPLES = 1000
 #MODEL_ID = "Qwen/Qwen2-0.5B-Instruct"
 #MODEL_ID = "Qwen/Qwen3-4B-Thinking-2507"
@@ -43,7 +44,7 @@ SFT_TRAINING_CONFIG = {
     "bf16": True,
     "max_length": 256,
     "completion_only_loss": True,
-    "report_to": ["tensorboard"],
+    "report_to": ["wandb"],
     "logging_steps": 10,
     "save_strategy": "steps",
     "save_steps": 25,
@@ -81,9 +82,16 @@ SYSTEM_PROMPT_FS = (
     "Now classify the next user question using the same format."
 )
 
-
 def hf_cli_login() -> None:
-    login(token=os.getenv("HUGGINGFACE_HUB_TOKEN"))
+    token = os.getenv("HUGGINGFACE_HUB_TOKEN")
+    if not token:
+        raise RuntimeError("Set HUGGINGFACE_HUB_TOKEN in your environment before calling hf_cli_login.")
+    login(token)
+def wandb_cli_login() -> None:
+    api_key = os.getenv("WANDB_API_KEY")
+    if not api_key:
+        raise RuntimeError("Set WANDB_API_KEY in your environment before calling wandb_cli_login.")
+    wandb.login(key=api_key, relogin=True)
 
 # features: ['prompt', 'adversarial', 'response', 'prompt_harm_label', 'response_refusal_label', 'response_harm_label', 'subcategory']
 # num_rows train: 86759
@@ -199,6 +207,7 @@ def run_trainer(
 
 def main() -> None:
     hf_cli_login()
+    wandb_cli_login()
     train_ds, _ = load_wildguard_dataset()
     train_ds = attach_prompts(train_ds)
     print(train_ds)
