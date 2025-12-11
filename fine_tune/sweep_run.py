@@ -36,6 +36,15 @@ def build_training_config_from_sweep() -> tuple[dict, sft.SFTConfig]:
     return training_cfg, training_args
 
 
+def build_lora_overrides_from_sweep() -> dict[str, float] | None:
+    sweep_cfg = wandb.config
+    overrides: dict[str, float] = {}
+    for key in sft.LORA_CONFIG.keys():
+        if key in sweep_cfg:
+            overrides[key] = sweep_cfg[key]
+    return overrides or None
+
+
 def main() -> None:
     sft.hf_cli_login()
     sft.wandb_cli_login()
@@ -43,7 +52,8 @@ def main() -> None:
 
     train_ds, _ = sft.load_wildguard_dataset()
     train_ds = sft.attach_prompts(train_ds)
-    model = sft.load_lora_model()
+    lora_overrides = build_lora_overrides_from_sweep()
+    model = sft.load_lora_model(lora_overrides)
 
     training_cfg, training_args = build_training_config_from_sweep()
     sft.run_trainer(model, train_ds, training_args, training_cfg)
