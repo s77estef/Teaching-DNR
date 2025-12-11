@@ -18,7 +18,7 @@ from trl import SFTConfig, SFTTrainer
 
 # ---- config settings ----
 
-TRAIN_SAMPLES = 20000
+TRAIN_SAMPLES = 100
 TEST_SAMPLES = 1000
 #MODEL_ID = "Qwen/Qwen2-0.5B-Instruct"
 #MODEL_ID = "Qwen/Qwen3-4B-Thinking-2507"
@@ -48,6 +48,22 @@ SFT_TRAINING_CONFIG = {
     "logging_steps": 10,
     "save_strategy": "steps",
     "save_steps": 25,
+}
+
+LORA_CONFIG: Dict[str, Any] = {
+    "task_type": "CAUSAL_LM",
+    "r": 16,
+    "lora_alpha": 32,
+    "lora_dropout": 0.05,  # possibly higher dropout with 0.1?
+    "target_modules": [
+        "q_proj",
+        "k_proj",
+        "v_proj",
+        "o_proj",
+        "gate_proj",
+        "up_proj",
+        "down_proj",
+    ],
 }
 
 
@@ -122,7 +138,7 @@ def attach_prompts(dataset: Dataset) -> Dataset:
     return dataset.map(make_conversation, remove_columns=["adversarial"])
 
 
-def load_lora_model() -> torch.nn.Module:
+def load_lora_model(lora_overrides: Dict[str, Any] | None = None) -> torch.nn.Module:
     device = "cuda" if torch.cuda.is_available() else "cpu"
     dtype = torch.float16 if device == "cuda" else torch.float32
     base = AutoModelForCausalLM.from_pretrained(
@@ -130,21 +146,10 @@ def load_lora_model() -> torch.nn.Module:
         torch_dtype=dtype,
         device_map="auto" if device == "cuda" else None,
     )
-    lora_cfg = LoraConfig(
-        task_type="CAUSAL_LM",
-        r=16,
-        lora_alpha=32,
-        lora_dropout=0.05, # possibly higher dropout with 0.1?
-        target_modules=[
-            "q_proj",
-            "k_proj",
-            "v_proj",
-            "o_proj",
-            "gate_proj",
-            "up_proj",
-            "down_proj",
-        ],
-    )
+    lora_params = copy.deepcopy(LORA_CONFIG)
+    if lora_overrides:
+        lora_params.update(lora_overrides)
+    lora_cfg = LoraConfig(**lora_params)
     model = get_peft_model(base, lora_cfg)
     model.print_trainable_parameters()
     return model
