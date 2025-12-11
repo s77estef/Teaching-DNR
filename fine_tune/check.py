@@ -22,6 +22,7 @@ ADAPTER_PATH = None
 #ADAPTER_PATH = "fine_tune/trained_experiments/Qwen3-4B-GRPO-test_20251205_164937_195803_merged/checkpoint-3000"
 #ADAPTER_PATH = "fine_tune/trained_experiments/Qwen3-4B-GRPO-test_20251206_094610/checkpoint-625"
 #ADAPTER_PATH = "fine_tune/trained_experiments/Qwen3-4B-GRPO-test_20251206_231028/checkpoint-625"
+ADAPTER_PATH = "fine_tune/trained_experiments/Qwen3-4B-SFT-test_20251210_201043/checkpoint-157"
 
 DATASET_NAME = "allenai/wildguardmix"
 DATASET_CONFIG = "wildguardtest"
