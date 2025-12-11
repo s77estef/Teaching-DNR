@@ -8,6 +8,12 @@ wandb agent <sweep-id>
 
 from __future__ import annotations
 
+# at the very top of fine_tune/sweep_run.py
+import sys
+from pathlib import Path
+
+sys.path.append(str(Path(__file__).resolve().parents[1]))
+
 import copy
 import os
 from pathlib import Path
@@ -15,11 +21,13 @@ import re
 
 import wandb
 import torch
+from tqdm.auto import tqdm
 
 from fine_tune import fine_tune_sft_label as sft
 
 
-sft.TRAIN_SAMPLES = 100
+sft.TRAIN_SAMPLES = 20000
+sft.TEST_SAMPLES = 1725
 
 ANSWER_PATTERN = re.compile(r"<answer>\s*(true|false)\s*</answer>", re.IGNORECASE)
 
@@ -32,6 +40,8 @@ def build_training_config_from_sweep() -> tuple[dict, sft.SFTConfig]:
     for key, value in sweep_cfg.items():
         if key in training_cfg:
             training_cfg[key] = value
+
+    training_cfg["disable_tqdm"] = False
 
     # Unique output directory per run for easier artifact tracking
     run_id = wandb.run.name or wandb.run.id
@@ -57,16 +67,15 @@ def _extract_prediction(text: str) -> str | None:
     return match.group(1).lower() if match else None
 
 
-def evaluate_accuracy(model, tokenizer, max_samples: int = 256, seed: int = 123):
+def evaluate_accuracy(model, tokenizer, seed: int = 123):
     model.eval()
     _, test_ds = sft.load_wildguard_dataset(seed=seed)
-    sample_count = min(max_samples, len(test_ds))
-    test_ds = test_ds.select(range(sample_count))
+    sample_count = len(test_ds)
     prompts_ds = sft.attach_prompts(test_ds)
     device = next(model.parameters()).device
 
     correct = 0
-    for idx in range(sample_count):
+    for idx in tqdm(range(sample_count), desc="Eval sweep run", unit="sample"):
         conversation = prompts_ds[idx]["prompt"]
         rendered = tokenizer.apply_chat_template(
             conversation,

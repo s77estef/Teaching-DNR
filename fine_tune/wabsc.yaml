@@ -1,4 +1,4 @@
-program: sweep_run.py      # your training script
+program: fine_tune/sweep_run.py      # your training script
 method: bayes               # or "random" or "grid"
 
 metric:
