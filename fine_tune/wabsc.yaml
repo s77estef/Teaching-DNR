@@ -1,8 +1,8 @@
-program: fine_tune_sft_label.py      # your training script
+program: sweep_run.py      # your training script
 method: bayes               # or "random" or "grid"
 
 metric:
-  name: eval/mean_reward    # name of the metric you log
+  name: eval/val_accuracy    # name of the metric you log
   goal: maximize            # or "minimize"
 
 parameters:
@@ -15,7 +15,13 @@ parameters:
     values: [8, 16, 32]
 
   r:  # LoRA rank sweep
-    values: [8, 16, 32]
+    values: [16, 32]
+
+  lora_alpha:
+    values: [32, 64]
+
+  lora_dropout:
+    values: [0.0, 0.05, 0.1]
 
 #  kl_penalty:
 #    distribution: log_uniform_values

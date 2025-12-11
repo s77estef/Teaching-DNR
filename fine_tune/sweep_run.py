@@ -11,10 +11,17 @@ from __future__ import annotations
 import copy
 import os
 from pathlib import Path
+import re
 
 import wandb
+import torch
 
 from fine_tune import fine_tune_sft_label as sft
+
+
+sft.TRAIN_SAMPLES = 100
+
+ANSWER_PATTERN = re.compile(r"<answer>\s*(true|false)\s*</answer>", re.IGNORECASE)
 
 
 def build_training_config_from_sweep() -> tuple[dict, sft.SFTConfig]:
@@ -45,6 +52,45 @@ def build_lora_overrides_from_sweep() -> dict[str, float] | None:
     return overrides or None
 
 
+def _extract_prediction(text: str) -> str | None:
+    match = ANSWER_PATTERN.search(text or "")
+    return match.group(1).lower() if match else None
+
+
+def evaluate_accuracy(model, tokenizer, max_samples: int = 256, seed: int = 123):
+    model.eval()
+    _, test_ds = sft.load_wildguard_dataset(seed=seed)
+    sample_count = min(max_samples, len(test_ds))
+    test_ds = test_ds.select(range(sample_count))
+    prompts_ds = sft.attach_prompts(test_ds)
+    device = next(model.parameters()).device
+
+    correct = 0
+    for idx in range(sample_count):
+        conversation = prompts_ds[idx]["prompt"]
+        rendered = tokenizer.apply_chat_template(
+            conversation,
+            tokenize=False,
+            add_generation_prompt=True,
+        )
+        inputs = tokenizer(rendered, return_tensors="pt").to(device)
+        with torch.no_grad():
+            output_ids = model.generate(
+                **inputs,
+                max_new_tokens=128,
+                eos_token_id=tokenizer.eos_token_id,
+                pad_token_id=tokenizer.pad_token_id or tokenizer.eos_token_id,
+            )
+        completion_ids = output_ids[0, inputs["input_ids"].shape[1]:]
+        generated_text = tokenizer.decode(completion_ids, skip_special_tokens=True)
+        prediction = _extract_prediction(generated_text)
+        gold = "true" if bool(test_ds[idx]["adversarial"]) else "false"
+        if prediction == gold:
+            correct += 1
+
+    return correct / sample_count if sample_count else 0.0
+
+
 def main() -> None:
     sft.hf_cli_login()
     sft.wandb_cli_login()
@@ -56,8 +102,13 @@ def main() -> None:
     model = sft.load_lora_model(lora_overrides)
 
     training_cfg, training_args = build_training_config_from_sweep()
-    sft.run_trainer(model, train_ds, training_args, training_cfg)
+    trainer = sft.run_trainer(model, train_ds, training_args, training_cfg)
+    val_accuracy = evaluate_accuracy(trainer.model, trainer.tokenizer)
 
+    # Log the metric that the sweep will optimize
+    wandb.log({"eval/val_accuracy": val_accuracy})
+
+    # Optionally, finish
     wandb.finish()
 
 
