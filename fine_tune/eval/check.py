@@ -11,25 +11,27 @@ from peft import PeftModel
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from tqdm.auto import tqdm
 
-from fine_tune_grpo_label import attach_prompts, hf_cli_login, SYSTEM_PROMPT
+from ..fine_tune_grpo_label import attach_prompts, hf_cli_login, SYSTEM_PROMPT
 
 # ---- config settings ----
+
+FINE_TUNE_DIR = Path(__file__).resolve().parents[1]
 
 MODEL_ID = "Qwen/Qwen3-4B"
 PRINT_SAMPLES = 1725
 TEST_SAMPLES = 1725
 NCOT = False
 ADAPTER_PATH = None
-#ADAPTER_PATH = "fine_tune/trained_experiments/Qwen3-4B-GRPO-test_20251205_164937_195803_merged/checkpoint-3000"
-#ADAPTER_PATH = "fine_tune/trained_experiments/Qwen3-4B-GRPO-test_20251206_094610/checkpoint-625"
-#ADAPTER_PATH = "fine_tune/trained_experiments/Qwen3-4B-GRPO-test_20251206_231028/checkpoint-625"
-#ADAPTER_PATH = "fine_tune/trained_experiments/Qwen3-4B-SFT-test_20251210_201043/checkpoint-157"
-#ADAPTER_PATH = "fine_tune/trained_experiments/Qwen3-4B-SFT-sweep_ancient-sweep-19/checkpoint-157"
+#ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-test_20251205_164937_195803_merged/checkpoint-3000"
+#ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-test_20251206_094610/checkpoint-625"
+#ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-test_20251206_231028/checkpoint-625"
+#ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-SFT-test_20251210_201043/checkpoint-157"
+#ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-SFT-sweep_ancient-sweep-19/checkpoint-157"
 
 DATASET_NAME = "allenai/wildguardmix"
 DATASET_CONFIG = "wildguardtest"
 DATASET_SPLIT = "test"
-RESULTS_DIR = Path(__file__).resolve().parent / "eval"
+RESULTS_DIR = FINE_TUNE_DIR / "eval"
 GENERATION_CONFIG = {
     "max_new_tokens": 1024,
     "temperature": 0.7,
