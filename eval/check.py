@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 import json
 import re
+import sys
 import time
 from datetime import datetime
 from pathlib import Path
@@ -11,15 +12,39 @@ from peft import PeftModel
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from tqdm.auto import tqdm
 
-from ..fine_tune_grpo_label import attach_prompts, hf_cli_login, SYSTEM_PROMPT
+"""
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.append(str(PROJECT_ROOT))
+
+try:
+    from fine_tune.fine_tune_grpo_label import attach_prompts, hf_cli_login, SYSTEM_PROMPT
+except ImportError:
+    sys.path.append(str(FINE_TUNE_DIR))
+    from fine_tune_grpo_label import attach_prompts, hf_cli_login, SYSTEM_PROMPT
+"""
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+FINE_TUNE_DIR = PROJECT_ROOT / "fine_tune"
+EVAL_DIR = Path(__file__).resolve().parent
+RESULTS_DIR = EVAL_DIR / "check_outputs"
+
+# support running both as module and standalone script
+try:
+    from ..fine_tune.fine_tune_grpo_label import attach_prompts, hf_cli_login, SYSTEM_PROMPT
+except ImportError:
+    import sys
+    from pathlib import Path
+
+    PROJECT_ROOT = Path(__file__).resolve().parents[1]
+    if str(PROJECT_ROOT) not in sys.path:
+        sys.path.append(str(PROJECT_ROOT))
+    from fine_tune.fine_tune_grpo_label import attach_prompts, hf_cli_login, SYSTEM_PROMPT
 
 # ---- config settings ----
 
-FINE_TUNE_DIR = Path(__file__).resolve().parents[1]
-
 MODEL_ID = "Qwen/Qwen3-4B"
-PRINT_SAMPLES = 1725
-TEST_SAMPLES = 1725
+PRINT_SAMPLES = 1
+TEST_SAMPLES = 1
 NCOT = False
 ADAPTER_PATH = None
 #ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-test_20251205_164937_195803_merged/checkpoint-3000"
@@ -31,7 +56,6 @@ ADAPTER_PATH = None
 DATASET_NAME = "allenai/wildguardmix"
 DATASET_CONFIG = "wildguardtest"
 DATASET_SPLIT = "test"
-RESULTS_DIR = FINE_TUNE_DIR / "eval"
 GENERATION_CONFIG = {
     "max_new_tokens": 1024,
     "temperature": 0.7,

@@ -241,8 +241,6 @@ def main() -> None:
     model = load_lora_model()
     training_args = build_training_args()
     trainer = run_trainer(model, train_ds, training_args, GRPO_TRAINING_CONFIG)
-    #check_output()
-    #check_output(num_samples=10, adapter_path="fine_tune/trained_experiments/Qwen3-4B-GRPO-test_20251205_164937/checkpoint-1000")
 
 
 if __name__ == "__main__":
