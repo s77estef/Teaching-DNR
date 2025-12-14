@@ -1,10 +1,10 @@
 #!/usr/bin/env python
 import json
 import re
-import sys
 import time
 from datetime import datetime
 from pathlib import Path
+from typing import Any, Dict, Optional
 
 import torch
 from datasets import Dataset, load_dataset
@@ -12,30 +12,17 @@ from peft import PeftModel
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from tqdm.auto import tqdm
 
-"""
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.append(str(PROJECT_ROOT))
-
-try:
-    from fine_tune.fine_tune_grpo_label import attach_prompts, hf_cli_login, SYSTEM_PROMPT
-except ImportError:
-    sys.path.append(str(FINE_TUNE_DIR))
-    from fine_tune_grpo_label import attach_prompts, hf_cli_login, SYSTEM_PROMPT
-"""
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 FINE_TUNE_DIR = PROJECT_ROOT / "fine_tune"
 EVAL_DIR = Path(__file__).resolve().parent
 RESULTS_DIR = EVAL_DIR / "check_outputs"
 
-# support running both as module and standalone script
+# Support running both as module and standalone script.
 try:
     from ..fine_tune.fine_tune_grpo_label import attach_prompts, hf_cli_login, SYSTEM_PROMPT
 except ImportError:
     import sys
-    from pathlib import Path
 
-    PROJECT_ROOT = Path(__file__).resolve().parents[1]
     if str(PROJECT_ROOT) not in sys.path:
         sys.path.append(str(PROJECT_ROOT))
     from fine_tune.fine_tune_grpo_label import attach_prompts, hf_cli_login, SYSTEM_PROMPT
@@ -56,6 +43,7 @@ ADAPTER_PATH = None
 DATASET_NAME = "allenai/wildguardmix"
 DATASET_CONFIG = "wildguardtest"
 DATASET_SPLIT = "test"
+REQUIRED_COLUMNS = {"prompt", "adversarial"}
 GENERATION_CONFIG = {
     "max_new_tokens": 1024,
     "temperature": 0.7,
@@ -89,6 +77,22 @@ if NCOT:
     SYSTEM_PROMPT = SYSTEM_PROMPT_NCOT
 
 
+def _default_dataset_info() -> Dict[str, Any]:
+    return {
+        "name": DATASET_NAME,
+        "config": DATASET_CONFIG,
+        "split": DATASET_SPLIT,
+        "sample_limit": TEST_SAMPLES,
+    }
+
+
+def _validate_dataset_columns(dataset: Dataset) -> None:
+    missing = REQUIRED_COLUMNS.difference(dataset.column_names)
+    if missing:
+        cols = ", ".join(sorted(missing))
+        raise ValueError(f"Dataset missing required columns: {cols}")
+
+
 def load_wildguard_test(seed: int = 42) -> Dataset:
     test = load_dataset(
         DATASET_NAME,
@@ -115,8 +119,14 @@ def check_output(
     print_samples: int = PRINT_SAMPLES,
     adapter_path: str | None = ADAPTER_PATH,
     output_dir: Path | str = RESULTS_DIR,
+    test_ds: Optional[Dataset] = None,
+    dataset_info: Optional[Dict[str, Any]] = None,
 ) -> Path:
-    """Generate predictions, compute metrics, and persist a JSON report."""
+    """Generate predictions, compute metrics, and persist a JSON report.
+
+    If `test_ds` is provided it must expose `prompt` and `adversarial`
+    columns and `dataset_info` can describe the source metadata.
+    """
 
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -149,7 +159,19 @@ def check_output(
         num_generated_tokens = output_ids.shape[1] - num_input_tokens
         return generated_text, inference_duration, num_generated_tokens
 
-    test_ds = load_wildguard_test()
+    if test_ds is None:
+        test_ds = load_wildguard_test()
+        dataset_info = _default_dataset_info()
+    else:
+        dataset_info = dict(dataset_info or {
+            "name": "custom",
+            "config": None,
+            "split": None,
+            "sample_limit": None,
+        })
+
+    _validate_dataset_columns(test_ds)
+
     prompts_ds = attach_prompts(test_ds)
     total_samples = len(test_ds)
     if print_samples is None:
@@ -215,10 +237,7 @@ def check_output(
                 "eos_token_id": tokenizer.eos_token_id,
             },
             "dataset": {
-                "name": DATASET_NAME,
-                "config": DATASET_CONFIG,
-                "split": DATASET_SPLIT,
-                "sample_limit": TEST_SAMPLES,
+                **dataset_info,
                 "total_samples": total_samples,
                 "reported_samples": report_samples,
             },
