@@ -1,9 +1,9 @@
-program: fine_tune/sweep_run.py      # your training script
-method: bayes               # or "random" or "grid"
+program: fine_tune/sweep_run.py       # training script
+method: bayes                         # or "random" or "grid"
 
 metric:
-  name: eval/val_accuracy    # name of the metric you log
-  goal: maximize            # or "minimize"
+  name: eval/val_accuracy             # name of logged metric
+  goal: maximize                      # or "minimize"
 
 parameters:
   learning_rate:
