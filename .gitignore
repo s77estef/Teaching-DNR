@@ -3,6 +3,7 @@ old
 data_creation
 fine_tune/wildguard.py
 fine_tune/trained_experiments
+fine_tune/trained_experiments_wrong
 fine_tune/count_tokens.py
 environment_scratch.yml
 environment.yml
