@@ -29,7 +29,7 @@ from fine_tune import fine_tune_sft_label as sft
 sft.TRAIN_SAMPLES = 20000
 sft.TEST_SAMPLES = 1725
 
-ANSWER_PATTERN = re.compile(r"<answer>\s*(true|false)\s*</answer>", re.IGNORECASE)
+ANSWER_PATTERN = re.compile(r"<answer>\s*(harmful|unharmful)\s*</answer>", re.IGNORECASE)
 
 
 def build_training_config_from_sweep() -> tuple[dict, sft.SFTConfig]:
@@ -93,7 +93,7 @@ def evaluate_accuracy(model, tokenizer, seed: int = 123):
         completion_ids = output_ids[0, inputs["input_ids"].shape[1]:]
         generated_text = tokenizer.decode(completion_ids, skip_special_tokens=True)
         prediction = _extract_prediction(generated_text)
-        gold = "true" if bool(test_ds[idx]["adversarial"]) else "false"
+        gold = test_ds[idx]["prompt_harm_label"].lower()
         if prediction == gold:
             correct += 1
 

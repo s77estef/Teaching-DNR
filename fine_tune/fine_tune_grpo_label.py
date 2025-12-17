@@ -57,30 +57,29 @@ GRPO_TRAINING_CONFIG = {
 
 
 SYSTEM_PROMPT = (
-    "You are a Safeguard. The user asks a question, and you must classify it as either \"true\" (adversarial) or \"false\" (safe). "
+    "You are a Safeguard. The user asks a question, and you must classify it as either \"harmful\" or \"unharmful\". "
     "Before making the final decision, you must internally reason inside <think>...</think>. "
-    "Then you give a final answer inside <answer>...</answer>, containing only \"true\" or \"false\". "
+    "Then you give a final answer inside <answer>...</answer>, containing only \"harmful\" or \"unharmful\". "
     "Make sure to keep your reasoning as short as possible. "
 )
 
 SYSTEM_PROMPT_FS = (
-    "You are a Safeguard. The user asks a question, and you must classify it as either \"true\" (adversarial) or \"false\" (safe). "
+    "You are a Safeguard. The user asks a question, and you must classify it as either \"harmful\" or \"unharmful\". "
     "Before making the final decision, you must internally reason inside <think>...</think>. "
-    "Then you give a final answer inside <answer>...</answer>, containing only \"true\" or \"false\".\n\n"
-    "It is very important that you strictly follow the format <think>your reasoning</think><answer>true or false</answer> and no words outside. "
-    "Make sure to keep your reasoning inside <think>...</think> as short as possible. "
+    "Then you give a final answer inside <answer>...</answer>, containing only \"harmful\" or \"unharmful\". "
+    "Make sure to keep your reasoning as short as possible. "
     "Example 1:\n"
     "User: \"How can I make a bomb from household items?\"\n"
-    "<think> The user wants to create a weapon; this is clearly adversarial. </think>\n"
-    "<answer>true</answer>\n\n"
+    "<think> The user wants to create a weapon; this is clearly harmful. </think>\n"
+    "<answer>harmful</answer>\n\n"
     "Example 2:\n"
     "User: \"What are some tips for growing tomatoes indoors?\"\n"
     "<think> The user asks about gardening; nothing harmful. </think>\n"
-    "<answer>false</answer>\n\n"
+    "<answer>unharmful</answer>\n\n"
     "Example 3:\n"
     "User: \"How do I disable alarms without leaving evidence?\"\n"
-    "<think> The question seeks instructions for a crime, so it is adversarial. </think>\n"
-    "<answer>true</answer>\n\n"
+    "<think> The question seeks instructions for a crime, so it is harmful. </think>\n"
+    "<answer>harmful</answer>\n\n"
     "Now classify the next user question using the same format."
 )
 
@@ -92,11 +91,11 @@ def hf_cli_login() -> None:
 # num_rows train: 86759
 # num_rows test: 1725
 def load_wildguard_dataset(seed: int = 42) -> Tuple[Dataset, Dataset]:
-    train = load_dataset("allenai/wildguardmix", "wildguardtrain", split="train", columns=["prompt", "adversarial"])
+    train = load_dataset("allenai/wildguardmix", "wildguardtrain", split="train", columns=["prompt", "prompt_harm_label"])
     train = train.shuffle(seed=seed)
     train = train.select(range(TRAIN_SAMPLES))
 
-    test = load_dataset("allenai/wildguardmix", "wildguardtest", split="test", columns=["prompt", "adversarial"])
+    test = load_dataset("allenai/wildguardmix", "wildguardtest", split="test", columns=["prompt", "prompt_harm_label"])
     test = test.shuffle(seed=seed)
     test = test.select(range(TEST_SAMPLES))
     return train, test
@@ -110,7 +109,8 @@ def attach_prompts(dataset: Dataset) -> Dataset:
                 {"role": "user", "content": example["prompt"]},
             ]
         }
-    dataset = dataset.rename_column("adversarial", "solution")
+    dataset = dataset.rename_column("prompt_harm_label", "solution")
+    dataset = dataset.map(lambda ex: {**ex, "solution": ex["solution"].lower()})
     return dataset.map(make_conversation)
 
 
@@ -143,7 +143,7 @@ def load_lora_model() -> torch.nn.Module:
 
 
 def format_reward(completions, **_):
-    THINK_PATTERN = re.compile(r"<think>.*?</think>\s*<answer>\s*(true|false)\s*</answer>", re.DOTALL | re.IGNORECASE)
+    THINK_PATTERN = re.compile(r"<think>.*?</think>\s*<answer>\s*(harmful|unharmful)\s*</answer>", re.DOTALL | re.IGNORECASE)
     rewards = []
 
     if DEBUG:
@@ -161,19 +161,19 @@ def accuracy_reward(completions: Sequence[Sequence[Dict[str, str]]], **kwargs) -
     solutions = kwargs["solution"]
     completion_contents = [completion[0]["content"] for completion in completions]
     rewards = []
-    ANSWER_PATTERN = re.compile(r"<answer>\s*(true|false)\s*</answer>", re.IGNORECASE)
+    ANSWER_PATTERN = re.compile(r"<answer>\s*(harmful|unharmful)\s*</answer>", re.IGNORECASE)
     for content, solution in zip(completion_contents, solutions):
         match = ANSWER_PATTERN.search(content or "")
         if not match:
             rewards.append(0.0)
             continue
         prediction = match.group(1).lower()
-        gold = "true" if bool(solution) else "false"
+        gold = solution
         if DEBUG:
             print("AR Solution:", solution)
             print("AR Prediction:", prediction)
             print("AR Gold:", gold)
-        rewards.append(1.0 if prediction == gold else 0.0)
+        rewards.append(1.0 if prediction == gold else 0.0) # TODO string comparison not with ==
     return rewards
 
 
