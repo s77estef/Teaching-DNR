@@ -30,15 +30,17 @@ except ImportError:
 # ---- config settings ----
 
 MODEL_ID = "Qwen/Qwen3-4B"
-PRINT_SAMPLES = 1
-TEST_SAMPLES = 1
+PRINT_SAMPLES = 10
+TEST_SAMPLES = 10
 NCOT = False
-ADAPTER_PATH = None
+#ADAPTER_PATH = None
 #ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-test_20251205_164937_195803_merged/checkpoint-3000"
 #ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-test_20251206_094610/checkpoint-625"
 #ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-test_20251206_231028/checkpoint-625"
 #ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-SFT-test_20251210_201043/checkpoint-157"
 #ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-SFT-sweep_ancient-sweep-19/checkpoint-157"
+ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-SFT-sweep_youthful-terrain-41/checkpoint-157"
+
 
 DATASET_NAME = "allenai/wildguardmix"
 DATASET_CONFIG = "wildguardtest"
@@ -100,11 +102,12 @@ def load_wildguard_test(seed: int = 42) -> Dataset:
         split=DATASET_SPLIT,
         columns=["prompt", "prompt_harm_label"],
     )
+    test = test.filter(lambda ex: ex["prompt_harm_label"] is not None)
     test = test.shuffle(seed=seed)
     if TEST_SAMPLES is not None:
-        sample_count = min(TEST_SAMPLES, len(test))
-        test = test.select(range(sample_count))
+        test = test.select(range(min(TEST_SAMPLES, len(test))))
     return test
+
 
 def _extract_prediction(text: str) -> str | None:
     match = ANSWER_PATTERN.search(text or "")
@@ -227,10 +230,13 @@ def check_output(
     accuracy = label_matches / total_samples if total_samples else 0.0
     format_accuracy = format_matches / total_samples if total_samples else 0.0
 
+    adapter_meta = str(adapter_path) if adapter_path is not None else None
+
     payload = {
         "metadata": {
             "model_id": MODEL_ID,
             "adapter_path": adapter_path,
+            "adapter_path": adapter_meta,
             "system_prompt": SYSTEM_PROMPT,
             "generation_config": {
                 **GENERATION_CONFIG,

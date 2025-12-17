@@ -121,7 +121,7 @@ def load_wildguard_dataset(seed: int = 42) -> Tuple[Dataset, Dataset]:
     test = test.select(range(TEST_SAMPLES))
     return train, test
 
-
+# TODO: possibly filter out None in prompt_label_harm column?
 def attach_prompts(dataset: Dataset) -> Dataset:
     def make_conversation(example: Dict) -> Dict[str, List[Dict[str, str]]]:
         label = example["prompt_harm_label"].lower()
