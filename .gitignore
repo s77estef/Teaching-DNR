@@ -9,6 +9,7 @@ environment_scratch.yml
 environment.yml
 minimal_env.txt
 wandb
+wandb_wrong
 
 __pycache__/
 *.py[cod]
