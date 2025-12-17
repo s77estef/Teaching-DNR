@@ -1,3 +1,9 @@
+"""
+Extracts the 313 adversarial prompts from strongreject and lets a given model classify them.
+Perfect classification would be all adversarial (label true).
+TODO: Add actual avaluation of the answer prompt with one of the two evaluators.
+"""
+
 import importlib
 import subprocess
 import sys
