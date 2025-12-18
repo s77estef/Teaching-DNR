@@ -24,10 +24,10 @@ import torch
 from tqdm.auto import tqdm
 
 from fine_tune import fine_tune_sft_label as sft
+from fine_tune.shared import load_wildguard_train, load_wildguard_test
 
 
 sft.TRAIN_SAMPLES = 20000
-sft.TEST_SAMPLES = 1725
 
 ANSWER_PATTERN = re.compile(r"<answer>\s*(harmful|unharmful)\s*</answer>", re.IGNORECASE)
 
@@ -69,7 +69,7 @@ def _extract_prediction(text: str) -> str | None:
 
 def evaluate_accuracy(model, tokenizer, seed: int = 123):
     model.eval()
-    _, test_ds = sft.load_wildguard_dataset(seed=seed)
+    test_ds = load_wildguard_test(seed=seed)
     sample_count = len(test_ds)
     prompts_ds = sft.attach_prompts(test_ds)
     device = next(model.parameters()).device
@@ -105,7 +105,7 @@ def main() -> None:
     sft.wandb_cli_login()
     wandb.init(project=os.getenv("WANDB_PROJECT"))
 
-    train_ds, _ = sft.load_wildguard_dataset()
+    train_ds = load_wildguard_train(num_samples=sft.TRAIN_SAMPLES)
     train_ds = sft.attach_prompts(train_ds)
     lora_overrides = build_lora_overrides_from_sweep()
     model = sft.load_lora_model(lora_overrides)

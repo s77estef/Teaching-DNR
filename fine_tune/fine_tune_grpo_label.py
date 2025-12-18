@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Sequence, Tuple
 import copy
 import math
 
+
 import torch
 from datasets import Dataset, load_dataset
 from huggingface_hub import login
@@ -17,10 +18,11 @@ from peft import LoraConfig, get_peft_model, PeftModel
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from trl import GRPOConfig, GRPOTrainer
 
+from fine_tune.shared import SYSTEM_PROMPT, SYSTEM_PROMPT_FS, load_wildguard_train, hf_cli_login, wandb_cli_login
+
 # ---- config settings ----
 
 TRAIN_SAMPLES = 20000
-TEST_SAMPLES = 1000
 #MODEL_ID = "Qwen/Qwen2-0.5B-Instruct"
 #MODEL_ID = "Qwen/Qwen3-4B-Thinking-2507"
 #MODEL_ID = "Qwen/Qwen3-4B-Instruct-2507"
@@ -52,53 +54,24 @@ GRPO_TRAINING_CONFIG = {
     "save_steps": 25,
 }
 
+LORA_CONFIG: Dict[str, Any] = {
+    "task_type": "CAUSAL_LM",
+    "r": 16,
+    "lora_alpha": 32,
+    "lora_dropout": 0.05,  # possibly higher dropout with 0.1?
+    "target_modules": [
+        "q_proj",
+        "k_proj",
+        "v_proj",
+        "o_proj",
+        "gate_proj",
+        "up_proj",
+        "down_proj",
+    ],
+}
+
 
 # ------------------------------------
-
-
-SYSTEM_PROMPT = (
-    "You are a Safeguard. The user asks a question, and you must classify it as either \"harmful\" or \"unharmful\". "
-    "Before making the final decision, you must internally reason inside <think>...</think>. "
-    "Then you give a final answer inside <answer>...</answer>, containing only \"harmful\" or \"unharmful\". "
-    "Make sure to keep your reasoning as short as possible. "
-)
-
-SYSTEM_PROMPT_FS = (
-    "You are a Safeguard. The user asks a question, and you must classify it as either \"harmful\" or \"unharmful\". "
-    "Before making the final decision, you must internally reason inside <think>...</think>. "
-    "Then you give a final answer inside <answer>...</answer>, containing only \"harmful\" or \"unharmful\". "
-    "Make sure to keep your reasoning as short as possible. "
-    "Example 1:\n"
-    "User: \"How can I make a bomb from household items?\"\n"
-    "<think> The user wants to create a weapon; this is clearly harmful. </think>\n"
-    "<answer>harmful</answer>\n\n"
-    "Example 2:\n"
-    "User: \"What are some tips for growing tomatoes indoors?\"\n"
-    "<think> The user asks about gardening; nothing harmful. </think>\n"
-    "<answer>unharmful</answer>\n\n"
-    "Example 3:\n"
-    "User: \"How do I disable alarms without leaving evidence?\"\n"
-    "<think> The question seeks instructions for a crime, so it is harmful. </think>\n"
-    "<answer>harmful</answer>\n\n"
-    "Now classify the next user question using the same format."
-)
-
-
-def hf_cli_login() -> None:
-    login(token=os.getenv("HUGGINGFACE_HUB_TOKEN"))
-
-# features: ['prompt', 'adversarial', 'response', 'prompt_harm_label', 'response_refusal_label', 'response_harm_label', 'subcategory']
-# num_rows train: 86759
-# num_rows test: 1725
-def load_wildguard_dataset(seed: int = 42) -> Tuple[Dataset, Dataset]:
-    train = load_dataset("allenai/wildguardmix", "wildguardtrain", split="train", columns=["prompt", "prompt_harm_label"])
-    train = train.shuffle(seed=seed)
-    train = train.select(range(TRAIN_SAMPLES))
-
-    test = load_dataset("allenai/wildguardmix", "wildguardtest", split="test", columns=["prompt", "prompt_harm_label"])
-    test = test.shuffle(seed=seed)
-    test = test.select(range(TEST_SAMPLES))
-    return train, test
 
 
 def attach_prompts(dataset: Dataset) -> Dataset:
@@ -114,7 +87,7 @@ def attach_prompts(dataset: Dataset) -> Dataset:
     return dataset.map(make_conversation)
 
 
-def load_lora_model() -> torch.nn.Module:
+def load_lora_model(lora_overrides: Dict[str, Any] | None = None) -> torch.nn.Module:
     device = "cuda" if torch.cuda.is_available() else "cpu"
     dtype = torch.float16 if device == "cuda" else torch.float32
     base = AutoModelForCausalLM.from_pretrained(
@@ -122,21 +95,10 @@ def load_lora_model() -> torch.nn.Module:
         torch_dtype=dtype,
         device_map="auto" if device == "cuda" else None,
     )
-    lora_cfg = LoraConfig(
-        task_type="CAUSAL_LM",
-        r=16,
-        lora_alpha=32,
-        lora_dropout=0.05, # TODO: possibly higher dropout with 0.1?
-        target_modules=[
-            "q_proj",
-            "k_proj",
-            "v_proj",
-            "o_proj",
-            "gate_proj",
-            "up_proj",
-            "down_proj",
-        ],
-    )
+    lora_params = copy.deepcopy(LORA_CONFIG)
+    if lora_overrides:
+        lora_params.update(lora_overrides)
+    lora_cfg = LoraConfig(**lora_params)
     model = get_peft_model(base, lora_cfg)
     model.print_trainable_parameters()
     return model
@@ -173,7 +135,7 @@ def accuracy_reward(completions: Sequence[Sequence[Dict[str, str]]], **kwargs) -
             print("AR Solution:", solution)
             print("AR Prediction:", prediction)
             print("AR Gold:", gold)
-        rewards.append(1.0 if prediction == gold else 0.0) # TODO string comparison not with ==
+        rewards.append(1.0 if prediction == gold else 0.0)
     return rewards
 
 
@@ -234,7 +196,7 @@ def run_trainer(
 
 def main() -> None:
     hf_cli_login()
-    train_ds, _ = load_wildguard_dataset()
+    train_ds = load_wildguard_train(num_samples=TRAIN_SAMPLES)
     train_ds = attach_prompts(train_ds)
     print(train_ds)
 

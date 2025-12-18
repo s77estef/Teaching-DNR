@@ -1,3 +1,6 @@
+# TODO use load train from shared
+
+
 #!/usr/bin/env python
 import json
 import re
@@ -17,7 +20,7 @@ FINE_TUNE_DIR = PROJECT_ROOT / "fine_tune"
 EVAL_DIR = Path(__file__).resolve().parent
 RESULTS_DIR = EVAL_DIR / "check_outputs"
 
-# Support running both as module and standalone script.
+# support running both as module and standalone script
 try:
     from ..fine_tune.fine_tune_grpo_label import attach_prompts, hf_cli_login, SYSTEM_PROMPT
 except ImportError:
@@ -30,8 +33,9 @@ except ImportError:
 # ---- config settings ----
 
 MODEL_ID = "Qwen/Qwen3-4B"
-PRINT_SAMPLES = 10
-TEST_SAMPLES = 10
+# max non-Null: 1699
+PRINT_SAMPLES = 1699
+TEST_SAMPLES = 1699
 NCOT = False
 #ADAPTER_PATH = None
 #ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-test_20251205_164937_195803_merged/checkpoint-3000"
@@ -39,7 +43,9 @@ NCOT = False
 #ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-test_20251206_231028/checkpoint-625"
 #ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-SFT-test_20251210_201043/checkpoint-157"
 #ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-SFT-sweep_ancient-sweep-19/checkpoint-157"
-ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-SFT-sweep_youthful-terrain-41/checkpoint-157"
+#ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-SFT-sweep_youthful-terrain-41/checkpoint-157"
+ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-SFT-sweep_ethereal-sweep-5/checkpoint-157"
+
 
 
 DATASET_NAME = "allenai/wildguardmix"

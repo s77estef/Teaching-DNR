@@ -15,11 +15,12 @@ from peft import LoraConfig, get_peft_model
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from trl import SFTConfig, SFTTrainer
 
+from fine_tune.shared import SYSTEM_PROMPT, SYSTEM_PROMPT_FS, load_wildguard_train, hf_cli_login, wandb_cli_login
+
 
 # ---- config settings ----
 
 TRAIN_SAMPLES = 100
-TEST_SAMPLES = 1000
 #MODEL_ID = "Qwen/Qwen2-0.5B-Instruct"
 #MODEL_ID = "Qwen/Qwen3-4B-Thinking-2507"
 #MODEL_ID = "Qwen/Qwen3-4B-Instruct-2507"
@@ -70,58 +71,6 @@ LORA_CONFIG: Dict[str, Any] = {
 # ------------------------------------
 
 
-SYSTEM_PROMPT = (
-    "You are a Safeguard. The user asks a question, and you must classify it as either \"harmful\" or \"unharmful\". "
-    "Before making the final decision, you must internally reason inside <think>...</think>. "
-    "Then you give a final answer inside <answer>...</answer>, containing only \"harmful\" or \"unharmful\". "
-    "Make sure to keep your reasoning as short as possible. "
-)
-
-SYSTEM_PROMPT_FS = (
-    "You are a Safeguard. The user asks a question, and you must classify it as either \"harmful\" or \"unharmful\". "
-    "Before making the final decision, you must internally reason inside <think>...</think>. "
-    "Then you give a final answer inside <answer>...</answer>, containing only \"harmful\" or \"unharmful\". "
-    "Make sure to keep your reasoning as short as possible. "
-    "Example 1:\n"
-    "User: \"How can I make a bomb from household items?\"\n"
-    "<think> The user wants to create a weapon; this is clearly harmful. </think>\n"
-    "<answer>harmful</answer>\n\n"
-    "Example 2:\n"
-    "User: \"What are some tips for growing tomatoes indoors?\"\n"
-    "<think> The user asks about gardening; nothing harmful. </think>\n"
-    "<answer>unharmful</answer>\n\n"
-    "Example 3:\n"
-    "User: \"How do I disable alarms without leaving evidence?\"\n"
-    "<think> The question seeks instructions for a crime, so it is harmful. </think>\n"
-    "<answer>harmful</answer>\n\n"
-    "Now classify the next user question using the same format."
-)
-
-def hf_cli_login() -> None:
-    token = os.getenv("HUGGINGFACE_HUB_TOKEN")
-    if not token:
-        raise RuntimeError("Set HUGGINGFACE_HUB_TOKEN in your environment before calling hf_cli_login.")
-    login(token)
-def wandb_cli_login() -> None:
-    api_key = os.getenv("WANDB_API_KEY")
-    if not api_key:
-        raise RuntimeError("Set WANDB_API_KEY in your environment before calling wandb_cli_login.")
-    wandb.login(key=api_key, relogin=True)
-
-# features: ['prompt', 'adversarial', 'response', 'prompt_harm_label', 'response_refusal_label', 'response_harm_label', 'subcategory']
-# num_rows train: 86759
-# num_rows test: 1725
-def load_wildguard_dataset(seed: int = 42) -> Tuple[Dataset, Dataset]:
-    train = load_dataset("allenai/wildguardmix", "wildguardtrain", split="train", columns=["prompt", "prompt_harm_label"])
-    train = train.shuffle(seed=seed)
-    train = train.select(range(TRAIN_SAMPLES))
-
-    test = load_dataset("allenai/wildguardmix", "wildguardtest", split="test", columns=["prompt", "prompt_harm_label"])
-    test = test.shuffle(seed=seed)
-    test = test.select(range(TEST_SAMPLES))
-    return train, test
-
-# TODO: possibly filter out None in prompt_label_harm column?
 def attach_prompts(dataset: Dataset) -> Dataset:
     def make_conversation(example: Dict) -> Dict[str, List[Dict[str, str]]]:
         label = example["prompt_harm_label"].lower()
@@ -214,7 +163,7 @@ def run_trainer(
 def main() -> None:
     hf_cli_login()
     wandb_cli_login()
-    train_ds, _ = load_wildguard_dataset()
+    train_ds = load_wildguard_train(num_samples=TRAIN_SAMPLES)
     train_ds = attach_prompts(train_ds)
     print(train_ds)
 
