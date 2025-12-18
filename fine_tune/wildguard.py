@@ -1,4 +1,5 @@
 from datasets import load_dataset
+from transformers import AutoTokenizer
 
 
 def count_adversarial_labels(dataset, split_name):
@@ -38,6 +39,38 @@ def count_prompt_harm_non_null(dataset, split_name):
     total = len(values)
     print(f"{split_name} prompt_harm_label non-null: {non_null} / {total}")
 
+# 20k: 2965
+# all: 3706
+def report_longest_prompt_tokens(
+    #num_samples: int = 20_000,
+    num_samples: int = 86759,    
+    seed: int = 42,
+    model_id: str = "Qwen/Qwen3-4B",
+):
+    """Load a subset of WildGuard train and report the max prompt token length."""
+
+    subset = load_dataset(
+        "allenai/wildguardmix",
+        "wildguardtrain",
+        split="train",
+        columns=["prompt"],
+    )
+    subset = subset.shuffle(seed=seed)
+    sample_count = min(num_samples, len(subset))
+    subset = subset.select(range(sample_count))
+
+    tokenizer = AutoTokenizer.from_pretrained(model_id)
+    max_tokens = 0
+
+    for prompt in subset["prompt"]:
+        token_len = len(tokenizer(prompt, add_special_tokens=False)["input_ids"])
+        max_tokens = max(max_tokens, token_len)
+
+    print(
+        f"Longest prompt among {sample_count} WildGuard train samples has {max_tokens} tokens"
+    )
+    return max_tokens
+
 
 # features: ['prompt', 'adversarial', 'response', 'prompt_harm_label', 'response_refusal_label', 'response_harm_label', 'subcategory']
 # num_rows: 86759
@@ -74,3 +107,4 @@ count_adversarial_harm(train, 'train')
 count_prompt_harm_non_null(train, 'train')
 count_prompt_harm_non_null(test, 'test')
 
+report_longest_prompt_tokens()
