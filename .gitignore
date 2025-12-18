@@ -8,7 +8,7 @@ fine_tune/count_tokens.py
 environment_scratch.yml
 environment.yml
 minimal_env.txt
-wandb
+wandb_sft
 wandb_wrong
 
 __pycache__/

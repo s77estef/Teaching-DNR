@@ -32,6 +32,13 @@ def count_adversarial_harm(dataset, split_name):
         print(f"  adversarial={key[0]}, prompt_harm_label={key[1]} -> {count}")
 
 
+def count_prompt_harm_non_null(dataset, split_name):
+    values = dataset["prompt_harm_label"]
+    non_null = sum(1 for value in values if value is not None)
+    total = len(values)
+    print(f"{split_name} prompt_harm_label non-null: {non_null} / {total}")
+
+
 # features: ['prompt', 'adversarial', 'response', 'prompt_harm_label', 'response_refusal_label', 'response_harm_label', 'subcategory']
 # num_rows: 86759
 # train adversarial counts -> true: 40956, false: 45803
@@ -57,5 +64,13 @@ print(test)
   adversarial=false, prompt_harm_label=harmful -> 25649
   adversarial=false, prompt_harm_label=unharmful -> 20154
 """
-train_adv_harm = load_dataset('allenai/wildguardmix', 'wildguardtrain', split=f"train[:100%]", columns=["prompt", "adversarial", "prompt_harm_label"])
-count_adversarial_harm(train_adv_harm, 'train')
+#train_adv_harm = load_dataset('allenai/wildguardmix', 'wildguardtrain', split=f"train[:100%]", columns=["prompt", "adversarial", "prompt_harm_label"])
+#test_adv_harm = load_dataset('allenai/wildguardmix', 'wildguardtest', split=f"test[:100%]", columns=["prompt", "adversarial", "prompt_harm_label"])
+
+count_adversarial_harm(train, 'train')
+
+# train prompt_harm_label non-null: 86759 / 86759
+# test prompt_harm_label non-null: 1699 / 1725
+count_prompt_harm_non_null(train, 'train')
+count_prompt_harm_non_null(test, 'test')
+
