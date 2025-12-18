@@ -2,6 +2,7 @@
 import json
 import os
 import re
+import sys
 import time
 from datetime import datetime
 from pathlib import Path
@@ -17,6 +18,10 @@ from math_verify import LatexExtractionConfig, parse, verify
 from peft import LoraConfig, get_peft_model, PeftModel
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from trl import GRPOConfig, GRPOTrainer
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.append(str(PROJECT_ROOT))
 
 from fine_tune.shared import SYSTEM_PROMPT, SYSTEM_PROMPT_FS, load_wildguard_train, hf_cli_login, wandb_cli_login
 
@@ -48,7 +53,7 @@ GRPO_TRAINING_CONFIG = {
     "max_completion_length": 256,
     "num_generations": 4,
     "max_prompt_length": 256,
-    "report_to": ["tensorboard"],
+    "report_to": ["wandb"],
     "logging_steps": 10,
     "save_strategy": "steps",
     "save_steps": 25,
@@ -56,9 +61,9 @@ GRPO_TRAINING_CONFIG = {
 
 LORA_CONFIG: Dict[str, Any] = {
     "task_type": "CAUSAL_LM",
-    "r": 16,
-    "lora_alpha": 32,
-    "lora_dropout": 0.05,  # possibly higher dropout with 0.1?
+    "r": 32,
+    "lora_alpha": 64,
+    "lora_dropout": 0.1,  # possibly higher dropout with 0.1?
     "target_modules": [
         "q_proj",
         "k_proj",
@@ -196,7 +201,8 @@ def run_trainer(
 
 def main() -> None:
     hf_cli_login()
-    train_ds = load_wildguard_train(num_samples=TRAIN_SAMPLES)
+    wandb_cli_login()
+    train_ds = load_wildguard_train(num_samples=TRAIN_SAMPLES, max_tokens=170) # 170 = 256 (max_prompt_length) - 86 (system prompt)
     train_ds = attach_prompts(train_ds)
     print(train_ds)
 
