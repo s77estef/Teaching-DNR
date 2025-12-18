@@ -3,8 +3,9 @@ import wandb
 
 from datasets import Dataset, load_dataset
 from huggingface_hub import login
+from transformers import AutoTokenizer
 
-
+# 86 tokens
 SYSTEM_PROMPT = (
     "You are a Safeguard. The user asks a question, and you must classify it as either \"harmful\" or \"unharmful\". "
     "Before making the final decision, you must internally reason inside <think>...</think>. "
@@ -44,10 +45,32 @@ def wandb_cli_login() -> None:
 
 # features: ['prompt', 'adversarial', 'response', 'prompt_harm_label', 'response_refusal_label', 'response_harm_label', 'subcategory']
 # num_rows train: 86759
-def load_wildguard_train(seed: int = 42, num_samples: int = 86759) -> Dataset:
-    train = load_dataset("allenai/wildguardmix", "wildguardtrain", split="train", columns=["prompt", "prompt_harm_label"])
+# longest prompt: 3706
+def load_wildguard_train(
+    seed: int = 42,
+    num_samples: int = 86759,
+    max_tokens: int | None = 3706,
+    tokenizer_name: str = "Qwen/Qwen3-4B",
+) -> Dataset:
+    train = load_dataset(
+        "allenai/wildguardmix",
+        "wildguardtrain",
+        split="train",
+        columns=["prompt", "prompt_harm_label"],
+    )
+
+    if max_tokens is not None:
+        tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
+
+        def within_limit(example):
+            token_ids = tokenizer(example["prompt"], add_special_tokens=False)["input_ids"]
+            return len(token_ids) <= max_tokens
+
+        train = train.filter(within_limit)
+
     train = train.shuffle(seed=seed)
-    train = train.select(range(num_samples))
+    sample_count = min(num_samples, len(train))
+    train = train.select(range(sample_count))
     return train
 
 # features: ['prompt', 'adversarial', 'response', 'prompt_harm_label', 'response_refusal_label', 'response_harm_label', 'subcategory']
