@@ -27,7 +27,7 @@ from fine_tune.shared import SYSTEM_PROMPT, SYSTEM_PROMPT_FS, load_wildguard_tra
 
 # ---- config settings ----
 
-TRAIN_SAMPLES = 20000
+TRAIN_SAMPLES = 100
 #MODEL_ID = "Qwen/Qwen2-0.5B-Instruct"
 #MODEL_ID = "Qwen/Qwen3-4B-Thinking-2507"
 #MODEL_ID = "Qwen/Qwen3-4B-Instruct-2507"
@@ -46,13 +46,13 @@ GRPO_TRAINING_CONFIG = {
     "output_dir": OUTPUT_DIR,
     "learning_rate": 1e-5,
     "remove_unused_columns": False,
-    "per_device_train_batch_size": 8,
+    "per_device_train_batch_size": 16,
     "gradient_accumulation_steps": 16,
     "num_train_epochs": 1,
     "bf16": True,
-    "max_completion_length": 256,
+    "max_completion_length": 1024,
     "num_generations": 4,
-    "max_prompt_length": 256,
+    "max_prompt_length": 512,
     "report_to": ["wandb"],
     "logging_steps": 10,
     "save_strategy": "steps",
@@ -202,7 +202,7 @@ def run_trainer(
 def main() -> None:
     hf_cli_login()
     wandb_cli_login()
-    train_ds = load_wildguard_train(num_samples=TRAIN_SAMPLES, max_tokens=170) # 170 = 256 (max_prompt_length) - 86 (system prompt)
+    train_ds = load_wildguard_train(num_samples=TRAIN_SAMPLES, max_tokens=GRPO_TRAINING_CONFIG["max_completion_length"]) # 170 = 256 (max_prompt_length) - 86 (system prompt)
     train_ds = attach_prompts(train_ds)
     print(train_ds)
 
