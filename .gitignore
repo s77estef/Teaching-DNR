@@ -8,7 +8,6 @@ fine_tune/count_tokens.py
 
 environment_scratch.yml
 environment_full.yml
-environment.yml
 
 wandb
 wandb_sft
