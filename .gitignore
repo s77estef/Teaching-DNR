@@ -7,7 +7,6 @@ fine_tune/trained_experiments_wrong
 fine_tune/count_tokens.py
 
 environment_scratch.yml
-environment_full.yml
 
 wandb
 wandb_sft
