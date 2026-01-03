@@ -1,6 +1,7 @@
 random
 old
 data_creation
+logs
 fine_tune/wildguard.py
 fine_tune/trained_experiments
 fine_tune/trained_experiments_wrong

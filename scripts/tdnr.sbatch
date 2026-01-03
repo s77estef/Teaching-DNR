@@ -1,17 +1,25 @@
 #!/bin/bash
 #SBATCH --job-name=tdnr
 #SBATCH --partition=A40devel
-#SBATCH --time=01:00:00
-#SBATCH --gpus=1
+#SBATCH --time=00:10:00
+#SBATCH --gres=gpu:1
 #SBATCH --ntasks=1
 #SBATCH --output=logs/%x-%j.out
 #SBATCH --error=logs/%x-%j.err
 
-set -euo pipefail
+set -euxo pipefail
 
-module load Anaconda3
+echo "STEP 1: starting job"
+
+module load Miniforge3
+echo "STEP 2: module loaded"
 
 source "$(conda info --base)/etc/profile.d/conda.sh"
+echo "STEP 3: conda.sh sourced"
 conda activate ~/envs/tdnr
+echo "STEP 4: conda env activated"
 cd "$HOME/code/Teaching-DNR"
+echo "STEP 5: cd successful"
 python fine_tune/fine_tune_grpo_label.py
+echo "STEP 6: python finished"
+

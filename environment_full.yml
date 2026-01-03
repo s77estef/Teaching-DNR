@@ -1,4 +1,4 @@
-name: maproject
+name: tdnr
 channels:
   - conda-forge
   - defaults
