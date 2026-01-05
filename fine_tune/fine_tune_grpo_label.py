@@ -19,6 +19,11 @@ from peft import LoraConfig, get_peft_model, PeftModel
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from trl import GRPOConfig, GRPOTrainer
 
+torch.backends.cuda.matmul.allow_tf32 = True
+torch.backends.cudnn.allow_tf32 = True
+torch.set_default_dtype(torch.bfloat16) # not sure if necessary
+# TODO batch generation and batch tokenization
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.append(str(PROJECT_ROOT))
@@ -27,7 +32,7 @@ from fine_tune.shared import SYSTEM_PROMPT, SYSTEM_PROMPT_FS, load_wildguard_tra
 
 # ---- config settings ----
 
-TRAIN_SAMPLES = 20000
+TRAIN_SAMPLES = 10000
 #MODEL_ID = "Qwen/Qwen2-0.5B-Instruct"
 #MODEL_ID = "Qwen/Qwen3-4B-Thinking-2507"
 #MODEL_ID = "Qwen/Qwen3-4B-Instruct-2507"
@@ -44,7 +49,7 @@ OUTPUT_DIR = os.path.join(
 GRPO_CONFIG_FILENAME = "grpo_config.json"
 GRPO_TRAINING_CONFIG = {
     "output_dir": OUTPUT_DIR,
-    "learning_rate": 1e-5,
+    "learning_rate": 5e-6,
     "remove_unused_columns": False,
     # pdtbs 8: 37GB, pdtbs 16: 41-OOM
     # good: pdtbs 21, gas none, 43GB
@@ -103,6 +108,7 @@ def load_lora_model(lora_overrides: Dict[str, Any] | None = None) -> torch.nn.Mo
     base = AutoModelForCausalLM.from_pretrained(
         MODEL_ID,
         torch_dtype=dtype,
+        attn_implementation="flash_attention_2"
         device_map="auto" if device == "cuda" else None,
     )
     lora_params = copy.deepcopy(LORA_CONFIG)
@@ -178,7 +184,7 @@ def run_trainer(
     training_args: GRPOConfig,
     training_config: Dict[str, Any] | None = None,
 ) -> GRPOTrainer:
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, padding_side="left")
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, padding_side="left", use_fast=True)
     tokenizer.pad_token = tokenizer.eos_token
 
     config_for_log = copy.deepcopy(training_config or GRPO_TRAINING_CONFIG)
