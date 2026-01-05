@@ -27,7 +27,7 @@ from fine_tune.shared import SYSTEM_PROMPT, SYSTEM_PROMPT_FS, load_wildguard_tra
 
 # ---- config settings ----
 
-TRAIN_SAMPLES = 100
+TRAIN_SAMPLES = 20000
 #MODEL_ID = "Qwen/Qwen2-0.5B-Instruct"
 #MODEL_ID = "Qwen/Qwen3-4B-Thinking-2507"
 #MODEL_ID = "Qwen/Qwen3-4B-Instruct-2507"
@@ -46,13 +46,18 @@ GRPO_TRAINING_CONFIG = {
     "output_dir": OUTPUT_DIR,
     "learning_rate": 1e-5,
     "remove_unused_columns": False,
-    "per_device_train_batch_size": 16,
-    "gradient_accumulation_steps": 16,
+    # pdtbs 8: 37GB, pdtbs 16: 41-OOM
+    # good: pdtbs 21, gas none, 43GB
+    "per_device_train_batch_size": 21,
+    # gas 16: 37GB, gas 8: 38GB
+    #"gradient_accumulation_steps": 4,
+    # with: 26GB, without: 37GB
+    #"gradient_checkpointing": True,
     "num_train_epochs": 1,
     "bf16": True,
-    "max_completion_length": 1024,
-    "num_generations": 4,
-    "max_prompt_length": 512,
+    "max_completion_length": 512,
+    "num_generations": 3,
+    "max_prompt_length": 256,
     "report_to": ["wandb"],
     "logging_steps": 10,
     "save_strategy": "steps",
