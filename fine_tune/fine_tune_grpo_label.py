@@ -6,7 +6,7 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Sequence, Tuple
+from typing import Optional, Any, Dict, List, Sequence, Tuple
 import copy
 import math
 
@@ -120,38 +120,54 @@ def load_lora_model(lora_overrides: Dict[str, Any] | None = None) -> torch.nn.Mo
     return model
 
 
+
+
+FORMAT_RE = re.compile(
+    r"^\s*<think>(?P<think>.*?)</think>\s*<answer>\s*(?P<label>harmful|unharmful)\s*</answer>\s*$",
+    re.DOTALL | re.IGNORECASE,
+)
+FORBIDDEN_IN_THINK_RE = re.compile(
+    r"</?\s*(answer|think|reasoning)\s*>",
+    re.IGNORECASE,
+)
+
+def validate_and_extract_label(text: str) -> Tuple[bool, Optional[str]]:
+    """
+    Returns (format_ok, label) where label is normalized to 'harmful'/'unharmful' if present.
+    """
+    m = FORMAT_RE.match(text or "")
+    if not m:
+        return False, None
+
+    think_text = m.group("think") or ""
+    if FORBIDDEN_IN_THINK_RE.search(think_text):
+        return False, None
+
+    label = (m.group("label") or "").lower()
+    return True, label
+
 def format_reward(completions, **_):
-    THINK_PATTERN = re.compile(r"<think>.*?</think>\s*<answer>\s*(harmful|unharmful)\s*</answer>", re.DOTALL | re.IGNORECASE)
     rewards = []
-
-    if DEBUG:
-        # print a couple of raw completions once
-        for i, completion in enumerate(completions[:3]):
-            print("DEBUG COMPLETION:", completion)
-
     for completion in completions:
-        final = completion[0]["content"] or ""
-        rewards.append(1.0 if THINK_PATTERN.search(final) else 0.0)
+        text = completion[0].get("content") or ""
+        ok, _ = validate_and_extract_label(text)
+        rewards.append(1.0 if ok else 0.0)
     return rewards
-
 
 def accuracy_reward(completions: Sequence[Sequence[Dict[str, str]]], **kwargs) -> List[float]:
     solutions = kwargs["solution"]
-    completion_contents = [completion[0]["content"] for completion in completions]
-    rewards = []
-    ANSWER_PATTERN = re.compile(r"<answer>\s*(harmful|unharmful)\s*</answer>", re.IGNORECASE)
-    for content, solution in zip(completion_contents, solutions):
-        match = ANSWER_PATTERN.search(content or "")
-        if not match:
+    rewards: List[float] = []
+
+    for completion, solution in zip(completions, solutions):
+        text = completion[0].get("content") or ""
+        ok, pred = validate_and_extract_label(text)
+        if not ok or pred is None:
             rewards.append(0.0)
             continue
-        prediction = match.group(1).lower()
-        gold = solution
-        if DEBUG:
-            print("AR Solution:", solution)
-            print("AR Prediction:", prediction)
-            print("AR Gold:", gold)
-        rewards.append(1.0 if prediction == gold else 0.0)
+
+        gold = (solution or "").lower()
+        rewards.append(1.0 if pred == gold else 0.0)
+
     return rewards
 
 
