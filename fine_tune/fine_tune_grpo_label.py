@@ -32,7 +32,7 @@ from fine_tune.shared import SYSTEM_PROMPT, SYSTEM_PROMPT_FS, load_wildguard_tra
 
 # ---- config settings ----
 
-TRAIN_SAMPLES = 10000
+TRAIN_SAMPLES = 100
 #MODEL_ID = "Qwen/Qwen2-0.5B-Instruct"
 #MODEL_ID = "Qwen/Qwen3-4B-Thinking-2507"
 #MODEL_ID = "Qwen/Qwen3-4B-Instruct-2507"
@@ -47,7 +47,23 @@ OUTPUT_DIR = os.path.join(
     f"{model_name}-GRPO-test_{timestamp}",
 )
 GRPO_CONFIG_FILENAME = "grpo_config.json"
-GRPO_TRAINING_CONFIG = {
+GRPO_TRAINING_CONFIG_C = {
+    "output_dir": OUTPUT_DIR,
+    "learning_rate": 1e-5,
+    "remove_unused_columns": False,
+    "per_device_train_batch_size": 8,
+    "gradient_accumulation_steps": 16,
+    "num_train_epochs": 1,
+    "bf16": True,
+    "max_completion_length": 256,
+    "num_generations": 4,
+    "max_prompt_length": 256,
+    "report_to": ["wandb"],
+    "logging_steps": 10,
+    "save_strategy": "steps",
+    "save_steps": 25,
+}
+GRPO_TRAINING_CONFIG_B = {
     "output_dir": OUTPUT_DIR,
     "learning_rate": 1e-4,
     "remove_unused_columns": False,
@@ -68,6 +84,7 @@ GRPO_TRAINING_CONFIG = {
     "save_strategy": "steps",
     "save_steps": 25,
 }
+GRPO_TRAINING_CONFIG = GRPO_TRAINING_CONFIG_C
 
 LORA_CONFIG: Dict[str, Any] = {
     "task_type": "CAUSAL_LM",
