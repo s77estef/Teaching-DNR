@@ -49,7 +49,7 @@ OUTPUT_DIR = os.path.join(
 GRPO_CONFIG_FILENAME = "grpo_config.json"
 GRPO_TRAINING_CONFIG = {
     "output_dir": OUTPUT_DIR,
-    "learning_rate": 5e-6,
+    "learning_rate": 1e-4,
     "remove_unused_columns": False,
     # pdtbs 8: 37GB, pdtbs 16: 41-OOM
     # good: pdtbs 21, gas none, 43GB
