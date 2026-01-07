@@ -108,7 +108,7 @@ def load_lora_model(lora_overrides: Dict[str, Any] | None = None) -> torch.nn.Mo
     base = AutoModelForCausalLM.from_pretrained(
         MODEL_ID,
         torch_dtype=dtype,
-        attn_implementation="flash_attention_2"
+        attn_implementation="flash_attention_2",
         device_map="auto" if device == "cuda" else None,
     )
     lora_params = copy.deepcopy(LORA_CONFIG)
