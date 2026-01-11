@@ -65,7 +65,7 @@ GRPO_TRAINING_CONFIG_C = {
 }
 GRPO_TRAINING_CONFIG_B = {
     "output_dir": OUTPUT_DIR,
-    "learning_rate": 1e-4,
+    "learning_rate": 1e-5,
     "remove_unused_columns": False,
     # pdtbs 8: 37GB, pdtbs 16: 41-OOM
     # good: pdtbs 21, gas none, 43GB
@@ -137,90 +137,67 @@ def load_lora_model(lora_overrides: Dict[str, Any] | None = None) -> torch.nn.Mo
     return model
 
 
-"""
-
-FORMAT_RE = re.compile(
-    r"^\s*<think>(?P<think>.*?)</think>\s*<answer>\s*(?P<label>harmful|unharmful)\s*</answer>\s*$",
+FULL_RE = re.compile(
+    r"^\s*<think>.*?</think>\s*<answer>\s*(harmful|unharmful)\s*</answer>\s*$",
     re.DOTALL | re.IGNORECASE,
 )
-FORBIDDEN_IN_THINK_RE = re.compile(
-    r"</?\s*(answer|think|reasoning)\s*>",
+
+OPEN_THINK_RE   = re.compile(r"<\s*think\s*>", re.IGNORECASE)
+CLOSE_THINK_RE  = re.compile(r"<\s*/\s*think\s*>", re.IGNORECASE)
+OPEN_ANSWER_RE  = re.compile(r"<\s*answer\s*>", re.IGNORECASE)
+CLOSE_ANSWER_RE = re.compile(r"<\s*/\s*answer\s*>", re.IGNORECASE)
+
+FORBIDDEN_RE = re.compile(
+    r"</?\s*(reasoning)\s*>",
     re.IGNORECASE,
 )
 
-def validate_and_extract_label(text: str) -> Tuple[bool, Optional[str]]:
-    #Returns (format_ok, label) where label is normalized to 'harmful'/'unharmful' if present.
-    
-    m = FORMAT_RE.match(text or "")
-    if not m:
-        return False, None
 
-    think_text = m.group("think") or ""
-    if FORBIDDEN_IN_THINK_RE.search(think_text):
-        return False, None
+def format_reward_simple(text: str) -> float:
+    text = text or ""
 
-    label = (m.group("label") or "").lower()
-    return True, label
+    # 0 reward if forbidden tag appears anywhere
+    if FORBIDDEN_RE.search(text):
+        return 0.0
 
-def format_reward(completions, **_):
-    rewards = []
-    for completion in completions:
-        text = completion[0].get("content") or ""
-        ok, _ = validate_and_extract_label(text)
-        rewards.append(1.0 if ok else 0.0)
-    return rewards
+    # Count outer tags
+    n_open_think   = len(OPEN_THINK_RE.findall(text))
+    n_close_think  = len(CLOSE_THINK_RE.findall(text))
+    n_open_answer = len(OPEN_ANSWER_RE.findall(text))
+    n_close_answer= len(CLOSE_ANSWER_RE.findall(text))
 
-def accuracy_reward(completions: Sequence[Sequence[Dict[str, str]]], **kwargs) -> List[float]:
-    solutions = kwargs["solution"]
-    rewards: List[float] = []
+    # 0 reward if any tag is doubled or missing
+    if (
+        n_open_think   != 1 or
+        n_close_think  != 1 or
+        n_open_answer != 1 or
+        n_close_answer!= 1
+    ):
+        return 0.0
 
-    for completion, solution in zip(completions, solutions):
-        text = completion[0].get("content") or ""
-        ok, pred = validate_and_extract_label(text)
-        if not ok or pred is None:
-            rewards.append(0.0)
-            continue
+    score = 0.0
 
-        gold = (solution or "").lower()
-        rewards.append(1.0 if pred == gold else 0.0)
+    # +0.1 for each exactly-once tag
+    score += 0.1  # think open
+    score += 0.1  # think close
+    score += 0.1  # answer open
+    score += 0.1  # answer close
 
-    return rewards
+    # +0.1 nothing before <think>
+    if re.match(r"^\s*<\s*think\s*>", text, flags=re.IGNORECASE):
+        score += 0.1
 
-"""
+    # +0.1 nothing after </answer>
+    if re.search(r"</\s*answer\s*>\s*$", text, flags=re.IGNORECASE):
+        score += 0.1
 
+    # +0.4 for full correct pattern
+    if FULL_RE.match(text):
+        score += 0.4
 
+    # Safety clamp
+    return min(score, 1.0)
 
-ANSWER_AT_END_RE = re.compile(
-    r"<answer>\s*(harmful|unharmful)\s*</answer>\s*$",
-    re.IGNORECASE,
-)
-
-def accuracy_reward(
-    completions: Sequence[Sequence[Dict[str, str]]],
-    **kwargs
-) -> List[float]:
-    solutions = kwargs["solution"]
-    rewards: List[float] = []
-
-    for completion, solution in zip(completions, solutions):
-        text = (completion[0].get("content") or "")
-
-        # Require exactly one <answer> opening and one closing tag in the whole output
-        if text.lower().count("<answer>") != 1 or text.lower().count("</answer>") != 1:
-            rewards.append(0.0)
-            continue
-
-        # Require that the single <answer>...</answer> occurs at the end
-        m = ANSWER_AT_END_RE.search(text)
-        if not m:
-            rewards.append(0.0)
-            continue
-
-        pred = m.group(1).lower()
-        gold = (solution or "").lower()
-        rewards.append(1.0 if pred == gold else 0.0)
-
-    return rewards
 
 
 def build_training_args() -> GRPOConfig:
@@ -261,7 +238,7 @@ def run_trainer(
     trainer = GRPOTrainer(
         model=model,
         processing_class=tokenizer,
-        reward_funcs=[accuracy_reward],
+        reward_funcs=[format_reward_simple],
         args=training_args,
         train_dataset=dataset,
     )
