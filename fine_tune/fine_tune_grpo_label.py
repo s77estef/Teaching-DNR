@@ -32,7 +32,7 @@ from fine_tune.shared import SYSTEM_PROMPT, SYSTEM_PROMPT_FS, load_wildguard_tra
 
 # ---- config settings ----
 
-TRAIN_SAMPLES = 100
+TRAIN_SAMPLES = 10000
 #MODEL_ID = "Qwen/Qwen2-0.5B-Instruct"
 #MODEL_ID = "Qwen/Qwen3-4B-Thinking-2507"
 #MODEL_ID = "Qwen/Qwen3-4B-Instruct-2507"
@@ -69,22 +69,22 @@ GRPO_TRAINING_CONFIG_B = {
     "remove_unused_columns": False,
     # pdtbs 8: 37GB, pdtbs 16: 41-OOM
     # good: pdtbs 21, gas none, 43GB
-    "per_device_train_batch_size": 21,
+    "per_device_train_batch_size": 20,
     # gas 16: 37GB, gas 8: 38GB
-    #"gradient_accumulation_steps": 4,
+    "gradient_accumulation_steps": 6,
     # with: 26GB, without: 37GB
     #"gradient_checkpointing": True,
     "num_train_epochs": 1,
     "bf16": True,
     "max_completion_length": 512,
-    "num_generations": 3,
+    "num_generations": 4,
     "max_prompt_length": 256,
     "report_to": ["wandb"],
     "logging_steps": 10,
     "save_strategy": "steps",
     "save_steps": 25,
 }
-GRPO_TRAINING_CONFIG = GRPO_TRAINING_CONFIG_C
+GRPO_TRAINING_CONFIG = GRPO_TRAINING_CONFIG_B
 
 LORA_CONFIG: Dict[str, Any] = {
     "task_type": "CAUSAL_LM",
@@ -137,51 +137,33 @@ def load_lora_model(lora_overrides: Dict[str, Any] | None = None) -> torch.nn.Mo
     return model
 
 
-
-
-FORMAT_RE = re.compile(
-    r"^\s*<think>(?P<think>.*?)</think>\s*<answer>\s*(?P<label>harmful|unharmful)\s*</answer>\s*$",
-    re.DOTALL | re.IGNORECASE,
-)
-FORBIDDEN_IN_THINK_RE = re.compile(
-    r"</?\s*(answer|think|reasoning)\s*>",
+ANSWER_AT_END_RE = re.compile(
+    r"<answer>\s*(harmful|unharmful)\s*</answer>\s*$",
     re.IGNORECASE,
 )
 
-def validate_and_extract_label(text: str) -> Tuple[bool, Optional[str]]:
-    """
-    Returns (format_ok, label) where label is normalized to 'harmful'/'unharmful' if present.
-    """
-    m = FORMAT_RE.match(text or "")
-    if not m:
-        return False, None
-
-    think_text = m.group("think") or ""
-    if FORBIDDEN_IN_THINK_RE.search(think_text):
-        return False, None
-
-    label = (m.group("label") or "").lower()
-    return True, label
-
-def format_reward(completions, **_):
-    rewards = []
-    for completion in completions:
-        text = completion[0].get("content") or ""
-        ok, _ = validate_and_extract_label(text)
-        rewards.append(1.0 if ok else 0.0)
-    return rewards
-
-def accuracy_reward(completions: Sequence[Sequence[Dict[str, str]]], **kwargs) -> List[float]:
+def accuracy_reward(
+    completions: Sequence[Sequence[Dict[str, str]]],
+    **kwargs
+) -> List[float]:
     solutions = kwargs["solution"]
     rewards: List[float] = []
 
     for completion, solution in zip(completions, solutions):
-        text = completion[0].get("content") or ""
-        ok, pred = validate_and_extract_label(text)
-        if not ok or pred is None:
+        text = (completion[0].get("content") or "")
+
+        # Require exactly one <answer> opening and one closing tag in the whole output
+        if text.lower().count("<answer>") != 1 or text.lower().count("</answer>") != 1:
             rewards.append(0.0)
             continue
 
+        # Require that the single <answer>...</answer> occurs at the end
+        m = ANSWER_AT_END_RE.search(text)
+        if not m:
+            rewards.append(0.0)
+            continue
+
+        pred = m.group(1).lower()
         gold = (solution or "").lower()
         rewards.append(1.0 if pred == gold else 0.0)
 
@@ -226,7 +208,7 @@ def run_trainer(
     trainer = GRPOTrainer(
         model=model,
         processing_class=tokenizer,
-        reward_funcs=[format_reward, accuracy_reward],
+        reward_funcs=[accuracy_reward],
         args=training_args,
         train_dataset=dataset,
     )
