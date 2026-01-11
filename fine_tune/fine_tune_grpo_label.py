@@ -47,6 +47,7 @@ OUTPUT_DIR = os.path.join(
     f"{model_name}-GRPO-test_{timestamp}",
 )
 GRPO_CONFIG_FILENAME = "grpo_config.json"
+REWARD_SOURCE_FILENAME = "reward_funcs.py"
 GRPO_TRAINING_CONFIG_C = {
     "output_dir": OUTPUT_DIR,
     "learning_rate": 1e-5,
@@ -253,6 +254,27 @@ def _format_duration(seconds: float) -> str:
     return f"{hours}:{minutes:02d}:{secs:02d}"
 
 
+def _write_reward_source(output_dir: str) -> Path:
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+    source = Path(__file__).read_text(encoding="utf-8")
+    marker = "# --------------------------------------------------------- REWARDS"
+    start = source.find(marker)
+    reward_block = source
+    if start != -1:
+        end = source.find(marker, start + len(marker))
+        if end != -1:
+            end_line = source.find("\n", end)
+            if end_line == -1:
+                end_line = len(source)
+            reward_block = source[start:end_line].rstrip() + "\n"
+        else:
+            reward_block = source[start:]
+    output_file = output_path / REWARD_SOURCE_FILENAME
+    output_file.write_text(reward_block, encoding="utf-8")
+    return output_file
+
+
 def run_trainer(
     model: torch.nn.Module,
     dataset: Dataset,
@@ -264,6 +286,7 @@ def run_trainer(
 
     config_for_log = copy.deepcopy(training_config or GRPO_TRAINING_CONFIG)
     _write_grpo_config(config_for_log, training_args.output_dir)
+    _write_reward_source(training_args.output_dir)
 
     trainer = GRPOTrainer(
         model=model,
