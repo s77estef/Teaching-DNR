@@ -136,182 +136,75 @@ def load_lora_model(lora_overrides: Dict[str, Any] | None = None) -> torch.nn.Mo
     model.print_trainable_parameters()
     return model
 
+
 # --------------------------------------------------------- REWARDS
 
-
-import re
-from typing import Optional, Tuple
-
-# --- Core patterns ---
 FULL_RE = re.compile(
-    r"^\s*<think>(?P<think>.*?)</think>\s*<answer>\s*(?P<label>harmful|unharmful)\s*</answer>\s*$",
+    r"^\s*<think>.*?</think>\s*<answer>\s*(harmful|unharmful)\s*</answer>\s*$",
     re.DOTALL | re.IGNORECASE,
 )
 
-# skeleton match: exactly one think-block, then whitespace-only gap, then one answer-block, nothing else (except surrounding whitespace)
-# label correctness is handled separately
-SKELETON_RE = re.compile(
-    r"^\s*<think>(?P<think>.*?)</think>(?P<gap>\s*)<answer>(?P<ans>.*?)</answer>\s*$",
-    re.DOTALL | re.IGNORECASE,
-)
+OPEN_THINK_RE   = re.compile(r"<\s*think\s*>", re.IGNORECASE)
+CLOSE_THINK_RE  = re.compile(r"<\s*/\s*think\s*>", re.IGNORECASE)
+OPEN_ANSWER_RE  = re.compile(r"<\s*answer\s*>", re.IGNORECASE)
+CLOSE_ANSWER_RE = re.compile(r"<\s*/\s*answer\s*>", re.IGNORECASE)
 
-# forbidden tags inside <think> (and usually anywhere extra)
-FORBIDDEN_TAGS_RE = re.compile(
-    r"</?\s*(answer|think|reasoning)\s*>",
+FORBIDDEN_RE = re.compile(
+    r"</?\s*(reasoning)\s*>",
     re.IGNORECASE,
 )
 
-# Count occurrences of the outer tags (case-insensitive, flexible whitespace)
-OPEN_THINK_RE  = re.compile(r"<\s*think\s*>", re.IGNORECASE)
-CLOSE_THINK_RE = re.compile(r"<\s*/\s*think\s*>", re.IGNORECASE)
-OPEN_ANSWER_RE = re.compile(r"<\s*answer\s*>", re.IGNORECASE)
-CLOSE_ANSWER_RE= re.compile(r"<\s*/\s*answer\s*>", re.IGNORECASE)
-
-# For ends with </answer> except whitespace
-ENDS_WITH_CLOSE_ANSWER_RE = re.compile(r"</\s*answer\s*>\s*$", re.IGNORECASE)
-
-
-def _count(pat: re.Pattern, s: str) -> int:
-    return len(pat.findall(s or ""))
-
-
-def format_score(text: str) -> float:
-    """
-    Returns a shaped format score in [0.0, 1.0].
-
-    Design goals:
-    - Exact FULL_RE match gets 1.0.
-    - Near-miss structure gets partial credit but is capped (<= 0.7).
-    - Duplicates/extra tags and forbidden tags are penalized enough that malformed outputs
-      don't score high.
-    - Strong preference for: starts with <think>, ends with </answer>, whitespace-only gap.
-    """
-    text = text or ""
-
-    # Exact match: immediately return 1.0
-    if FULL_RE.match(text):
-        think = FULL_RE.match(text).group("think") or ""
-        if FORBIDDEN_TAGS_RE.search(think):
-            # disallow any tag strings inside think, even in exact matches
-            return 0.0
-        return 1.0
-
-    # Shaped scoring for non-exact outputs (capped later)
-    score = 0.0
-
-    # Counts of outer tags
-    n_open_think = _count(OPEN_THINK_RE, text)
-    n_close_think = _count(CLOSE_THINK_RE, text)
-    n_open_answer = _count(OPEN_ANSWER_RE, text)
-    n_close_answer = _count(CLOSE_ANSWER_RE, text)
-
-    # Duplicate/extra outer tags penalty:
-    # - Expect exactly 1 of each outer tag.
-    # - Penalize each extra/missing occurrence strongly.
-    expected = {
-        "open_think": (n_open_think, 1),
-        "close_think": (n_close_think, 1),
-        "open_answer": (n_open_answer, 1),
-        "close_answer": (n_close_answer, 1),
-    }
-    for _, (count, exp) in expected.items():
-        if count != exp:
-            # Penalize deviation, extra or missing
-            # example: 2 instead of 1 => -0.35, 0 instead of 1 => -0.35, 3 => -0.70
-            score -= 0.35 * abs(count - exp)
-
-    # If the skeleton matches, can award structured partial credit safely.
-    m = SKELETON_RE.match(text)
-    if m:
-        think = m.group("think") or ""
-        gap = m.group("gap") or ""
-        ans = m.group("ans") or ""
-
-        # +0.2 for having a well-ordered think block (by virtue of skeleton match)
-        score += 0.2
-        # +0.2 for having a well-ordered answer block (by virtue of skeleton match)
-        score += 0.2
-
-        # +0.2 if it (ignoring leading whitespace) starts with <think>
-        if re.match(r"^\s*<\s*think\s*>", text, flags=re.IGNORECASE):
-            score += 0.2
-
-        # +0.2 if it ends with </answer> (except whitespace)
-        if ENDS_WITH_CLOSE_ANSWER_RE.search(text):
-            score += 0.2
-
-        # +0.1 if no text between </think> and <answer> except whitespace
-        if re.fullmatch(r"\s*", gap):
-            score += 0.1
-
-        # Penalize forbidden tags inside <think>
-        forbidden_in_think = FORBIDDEN_TAGS_RE.findall(think)
-        if forbidden_in_think:
-            score -= 0.30 * len(forbidden_in_think)
-
-        # discourage tags inside answer content too
-        forbidden_in_answer = FORBIDDEN_TAGS_RE.findall(ans)
-        if forbidden_in_answer:
-            score -= 0.20 * len(forbidden_in_answer)
-
-    else:
-        # If skeleton doesn't match, do not award “contains” points; only penalties apply.
-        # (This prevents rewarding out-of-order or multi-block structures.)
-        pass
-
-    # Cap non-exact rewards so exact is clearly best.
-    # Anything non-exact should not exceed 0.7 (as discussed).
-    if score > 0.7:
-        score = 0.7
-
-    # 4) Clamp to [0, 1]
-    if score < 0.0:
-        score = 0.0
-    elif score > 1.0:
-        score = 1.0
-
-    return float(score)
-
-
-# --- TRL reward function wrappers ---
-
-def format_reward_shaped(completions, **_):
-    """
-    TRL expects a list of floats, one per sample.
-    """
+def format_reward_simple(completions, **_):
     rewards = []
     for completion in completions:
         text = completion[0].get("content") or ""
-        rewards.append(format_score(text))
-    return rewards
 
-"""
-
-def _extract_label_if_any(text: str) -> Optional[str]:
-    # Extract label only if FULL_RE matches exactly. Returns normalized label or None.
-    m = FULL_RE.match(text or "")
-    if not m:
-        return None
-    return (m.group("label") or "").lower()
-
-def accuracy_reward_strict(completions, **kwargs):
-    # Strict accuracy: only award accuracy if FULL_RE matches exactly.
-    # Returns 1.0 if predicted label equals gold, else 0.0.
-    solutions = kwargs["solution"]
-    rewards = []
-    for completion, solution in zip(completions, solutions):
-        text = completion[0].get("content") or ""
-        pred = _extract_label_if_any(text)
-        if pred is None:
+        # 0 reward if forbidden tag appears anywhere
+        if FORBIDDEN_RE.search(text):
             rewards.append(0.0)
             continue
-        gold = (solution or "").lower()
-        rewards.append(1.0 if pred == gold else 0.0)
+
+        # Count outer tags
+        n_open_think   = len(OPEN_THINK_RE.findall(text))
+        n_close_think  = len(CLOSE_THINK_RE.findall(text))
+        n_open_answer  = len(OPEN_ANSWER_RE.findall(text))
+        n_close_answer = len(CLOSE_ANSWER_RE.findall(text))
+
+        # 0 reward if any tag is doubled or missing
+        if (
+            n_open_think   != 1 or
+            n_close_think  != 1 or
+            n_open_answer  != 1 or
+            n_close_answer != 1
+        ):
+            rewards.append(0.0)
+            continue
+
+        score = 0.0
+
+        # +0.1 for each exactly-once tag
+        score += 0.1  # <think>
+        score += 0.1  # </think>
+        score += 0.1  # <answer>
+        score += 0.1  # </answer>
+
+        # +0.1 nothing before <think>
+        if re.match(r"^\s*<\s*think\s*>", text, flags=re.IGNORECASE):
+            score += 0.1
+
+        # +0.1 nothing after </answer>
+        if re.search(r"</\s*answer\s*>\s*$", text, flags=re.IGNORECASE):
+            score += 0.1
+
+        # +0.4 full correct pattern
+        if FULL_RE.match(text):
+            score += 0.4
+
+        rewards.append(1.0 if score > 1.0 else score)
+
     return rewards
-"""
 
 # --------------------------------------------------------- REWARDS
-
 
 
 def build_training_args() -> GRPOConfig:
@@ -352,7 +245,7 @@ def run_trainer(
     trainer = GRPOTrainer(
         model=model,
         processing_class=tokenizer,
-        reward_funcs=[format_reward_shaped],
+        reward_funcs=[format_reward_simple],
         args=training_args,
         train_dataset=dataset,
     )
