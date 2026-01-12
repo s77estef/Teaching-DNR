@@ -59,6 +59,10 @@ GRPO_TRAINING_CONFIG_C = {
     "bf16": True,
     "max_completion_length": 256,
     "num_generations": 4,
+    "do_sample": True,
+    "temperature": 1.0,
+    "top_p": 0.95,
+    "top_k": 50,
     "max_prompt_length": 256,
     "report_to": ["wandb"],
     "logging_steps": 10,
@@ -80,6 +84,10 @@ GRPO_TRAINING_CONFIG_B = {
     "bf16": True,
     "max_completion_length": 512,
     "num_generations": 4,
+    "do_sample": True,
+    "temperature": 1.0, # higher, 1.1 or 1.2
+    "top_p": 0.95, # lower, 0.9 
+    "top_k": 50,
     "max_prompt_length": 256,
     #"report_to": ["wandb"],
     "logging_steps": 10,
