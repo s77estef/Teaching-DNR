@@ -32,7 +32,7 @@ from fine_tune.shared import SYSTEM_PROMPT, SYSTEM_PROMPT_FS, load_wildguard_tra
 
 # ---- config settings ----
 
-TRAIN_SAMPLES = 10000
+TRAIN_SAMPLES = 150
 #MODEL_ID = "Qwen/Qwen2-0.5B-Instruct"
 #MODEL_ID = "Qwen/Qwen3-4B-Thinking-2507"
 #MODEL_ID = "Qwen/Qwen3-4B-Instruct-2507"
@@ -67,7 +67,7 @@ GRPO_TRAINING_CONFIG_C = {
 }
 GRPO_TRAINING_CONFIG_B = {
     "output_dir": OUTPUT_DIR,
-    "learning_rate": 1e-5,
+    "learning_rate": 1e-4,
     "remove_unused_columns": False,
     # pdtbs 8: 37GB, pdtbs 16: 41-OOM
     # good: pdtbs 21, gas none, 43GB
@@ -81,10 +81,10 @@ GRPO_TRAINING_CONFIG_B = {
     "max_completion_length": 512,
     "num_generations": 4,
     "max_prompt_length": 256,
-    "report_to": ["wandb"],
+    #"report_to": ["wandb"],
     "logging_steps": 10,
     "save_strategy": "steps",
-    "save_steps": 25,
+    "save_steps": 1,
 }
 GRPO_TRAINING_CONFIG = GRPO_TRAINING_CONFIG_B
 
@@ -205,7 +205,7 @@ def format_reward_simple(completions, **_):
 
     return rewards
 
-
+"""
 def _extract_label_if_any(text: str) -> Optional[str]:
     # Extract label only if FULL_RE matches exactly. Returns normalized label or None.
     m = FULL_RE.match(text or "")
@@ -227,6 +227,7 @@ def accuracy_reward_strict(completions, **kwargs):
         gold = (solution or "").lower()
         rewards.append(1.0 if pred == gold else 0.0)
     return rewards
+"""
 
 # --------------------------------------------------------- REWARDS
 
@@ -302,21 +303,45 @@ def _completion_to_text(completion: Any) -> str:
 
 def _write_reward_batch_log(step: int, output_dir: str, payload: Dict[str, Any]) -> None:
     completions = payload.get("completions") or []
+    if not isinstance(completions, list):
+        completions = [completions]
     rewards_by_func = payload.get("rewards") or {}
     batch_size = len(completions)
-    prompts = _normalize_list(payload.get("prompts"), batch_size)
-    solutions = _normalize_list(payload.get("solutions"), batch_size)
+    raw_prompts = payload.get("prompts")
+    raw_solutions = payload.get("solutions")
+    prompts_list = list(raw_prompts) if isinstance(raw_prompts, (list, tuple)) else None
+    solutions_list = list(raw_solutions) if isinstance(raw_solutions, (list, tuple)) else None
+    num_prompts = len(prompts_list) if prompts_list else 0
+    group_size = (
+        batch_size // num_prompts
+        if num_prompts and batch_size % num_prompts == 0
+        else None
+    )
+    prompts = _normalize_list(raw_prompts, batch_size)
+    solutions = _normalize_list(raw_solutions, batch_size)
 
     checkpoint_dir = Path(output_dir) / f"checkpoint-{step}"
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
     output_file = checkpoint_dir / CHECKPOINT_BATCH_LOG_FILENAME
     with output_file.open("w", encoding="utf-8") as fout:
         for idx in range(batch_size):
+            prompt_idx = idx // group_size if group_size else idx
+            prompt_val = (
+                prompts_list[prompt_idx]
+                if prompts_list and prompt_idx < len(prompts_list)
+                else prompts[idx]
+            )
+            solution_val = (
+                solutions_list[prompt_idx]
+                if solutions_list and prompt_idx < len(solutions_list)
+                else solutions[idx]
+            )
             entry = {
                 "step": step,
-                "prompt": _safe_json_value(prompts[idx]),
+                "entry_type": "completion",
+                "prompt": _safe_json_value(prompt_val),
                 "completion": _completion_to_text(completions[idx]),
-                "solution": _safe_json_value(solutions[idx]),
+                "solution": _safe_json_value(solution_val),
                 "rewards": {
                     name: (
                         rewards[idx]
@@ -327,6 +352,23 @@ def _write_reward_batch_log(step: int, output_dir: str, payload: Dict[str, Any])
                 },
             }
             fout.write(json.dumps(entry, ensure_ascii=True) + "\n")
+            if group_size and (idx + 1) % group_size == 0:
+                group_start = idx + 1 - group_size
+                group_rewards = {}
+                for name, rewards in rewards_by_func.items():
+                    if isinstance(rewards, (list, tuple)) and len(rewards) >= idx + 1:
+                        group_rewards[name] = list(rewards[group_start:idx + 1])
+                    else:
+                        group_rewards[name] = None
+                summary = {
+                    "step": step,
+                    "entry_type": "group_rewards",
+                    "prompt": _safe_json_value(prompt_val),
+                    "solution": _safe_json_value(solution_val),
+                    "completion_count": group_size,
+                    "rewards": group_rewards,
+                }
+                fout.write(json.dumps(summary, ensure_ascii=True) + "\n")
 
 
 class _RewardLogState:
@@ -391,7 +433,7 @@ def run_trainer(
     _write_grpo_config(config_for_log, training_args.output_dir)
     _write_reward_source(training_args.output_dir)
 
-    reward_funcs = [format_reward_simple, accuracy_reward_strict]
+    reward_funcs = [format_reward_simple]
     save_steps = training_args.save_steps or GRPO_TRAINING_CONFIG.get("save_steps")
     log_state = _RewardLogState(
         num_funcs=len(reward_funcs),
