@@ -84,10 +84,10 @@ GRPO_TRAINING_CONFIG_B = {
     "bf16": True,
     "max_completion_length": 512,
     "num_generations": 4,
-    "do_sample": True,
-    "temperature": 1.0, # higher, 1.1 or 1.2
-    "top_p": 0.95, # lower, 0.9 
-    "top_k": 50,
+    #"do_sample": True,
+    "temperature": 2, # (default 1.0) higher, 1.1 or 1.2
+    "top_p": 0.7, # (default 1.0) lower, 0.9 
+    #"top_k": 50, # (default None)
     "max_prompt_length": 256,
     #"report_to": ["wandb"],
     "logging_steps": 10,
@@ -350,14 +350,6 @@ def _write_reward_batch_log(step: int, output_dir: str, payload: Dict[str, Any])
                 "prompt": _safe_json_value(prompt_val),
                 "completion": _completion_to_text(completions[idx]),
                 "solution": _safe_json_value(solution_val),
-                "rewards": {
-                    name: (
-                        rewards[idx]
-                        if isinstance(rewards, (list, tuple)) and idx < len(rewards)
-                        else None
-                    )
-                    for name, rewards in rewards_by_func.items()
-                },
             }
             fout.write(json.dumps(entry, ensure_ascii=True) + "\n")
             if group_size and (idx + 1) % group_size == 0:
