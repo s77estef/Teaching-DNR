@@ -32,7 +32,7 @@ from fine_tune.shared import SYSTEM_PROMPT, SYSTEM_PROMPT_FS, load_wildguard_tra
 
 # ---- config settings ----
 
-TRAIN_SAMPLES = 150
+TRAIN_SAMPLES = 10000
 #MODEL_ID = "Qwen/Qwen2-0.5B-Instruct"
 #MODEL_ID = "Qwen/Qwen3-4B-Thinking-2507"
 #MODEL_ID = "Qwen/Qwen3-4B-Instruct-2507"
@@ -84,8 +84,8 @@ GRPO_TRAINING_CONFIG_B = {
     "bf16": True,
     "max_completion_length": 512,
     "num_generations": 4,
-    "temperature": 1.5, # (default 1.0) higher, 1.1 or 1.2
-    "top_p": 0.9, # (default 1.0) lower, 0.9 
+    "temperature": 1.6, # (default 1.0) 2.0 is too much
+    "top_p": 0.8, # (default 1.0) 0.8 or 0.9 
     #"top_k": 50, # (default None) keeps random tokens at bay with higher temperature
     "generation_kwargs": {
         "do_sample": True,
@@ -94,7 +94,7 @@ GRPO_TRAINING_CONFIG_B = {
     #"report_to": ["wandb"],
     "logging_steps": 10,
     "save_strategy": "steps",
-    "save_steps": 1,
+    "save_steps": 25,
 }
 GRPO_TRAINING_CONFIG = GRPO_TRAINING_CONFIG_B
 
@@ -150,22 +150,26 @@ def load_lora_model(lora_overrides: Dict[str, Any] | None = None) -> torch.nn.Mo
 
 # --------------------------------------------------------- REWARDS
 
+import re
+
 FULL_RE = re.compile(
     r"^\s*<think>.*?</think>\s*<answer>\s*(?P<label>harmful|unharmful)\s*</answer>\s*$",
     re.DOTALL | re.IGNORECASE,
 )
 
-OPEN_THINK_RE   = re.compile(r"<\s*think\s*>", re.IGNORECASE)
-CLOSE_THINK_RE  = re.compile(r"<\s*/\s*think\s*>", re.IGNORECASE)
-OPEN_ANSWER_RE  = re.compile(r"<\s*answer\s*>", re.IGNORECASE)
-CLOSE_ANSWER_RE = re.compile(r"<\s*/\s*answer\s*>", re.IGNORECASE)
+# Strict tags: no whitespace inside angle brackets
+OPEN_THINK_RE   = re.compile(r"<think>", re.IGNORECASE)
+CLOSE_THINK_RE  = re.compile(r"</think>", re.IGNORECASE)
+OPEN_ANSWER_RE  = re.compile(r"<answer>", re.IGNORECASE)
+CLOSE_ANSWER_RE = re.compile(r"</answer>", re.IGNORECASE)
 
+# (Optional but recommended) forbid any tag except exact think/answer open/close
 FORBIDDEN_RE = re.compile(
-    r"</?\s*(reasoning)\s*>",
+    r"<(?!/?(?:think|answer)>)[^>]+>",
     re.IGNORECASE,
 )
 
-def format_reward_simple(completions, **_):
+def format_reward(completions, **_):
     rewards = []
     for completion in completions:
         text = completion[0].get("content") or ""
@@ -175,36 +179,30 @@ def format_reward_simple(completions, **_):
             rewards.append(0.0)
             continue
 
-        # Count outer tags
+        # Count tags
         n_open_think   = len(OPEN_THINK_RE.findall(text))
         n_close_think  = len(CLOSE_THINK_RE.findall(text))
         n_open_answer  = len(OPEN_ANSWER_RE.findall(text))
         n_close_answer = len(CLOSE_ANSWER_RE.findall(text))
 
-        # 0 reward if any tag is doubled
-        if (
-            n_open_think   > 1 or
-            n_close_think  > 1 or
-            n_open_answer  > 1 or
-            n_close_answer > 1
-        ):
-            rewards.append(0.0)
-            continue
-
         score = 0.0
 
-        # +0.1 for each exactly-once tag
-        score += 0.1  # <think>
-        score += 0.1  # </think>
-        score += 0.1  # <answer>
-        score += 0.1  # </answer>
+        # +0.1 for each tag that appears exactly once
+        if n_open_think == 1:
+            score += 0.1  # <think>
+        if n_close_think == 1:
+            score += 0.1  # </think>
+        if n_open_answer == 1:
+            score += 0.1  # <answer>
+        if n_close_answer == 1:
+            score += 0.1  # </answer>
 
         # +0.1 nothing before <think>
-        if re.match(r"^\s*<\s*think\s*>", text, flags=re.IGNORECASE):
+        if re.match(r"^\s*<think>", text, flags=re.IGNORECASE):
             score += 0.1
 
         # +0.1 nothing after </answer>
-        if re.search(r"</\s*answer\s*>\s*$", text, flags=re.IGNORECASE):
+        if re.search(r"</answer>\s*$", text, flags=re.IGNORECASE):
             score += 0.1
 
         # +0.4 full correct pattern
@@ -214,6 +212,7 @@ def format_reward_simple(completions, **_):
         rewards.append(1.0 if score > 1.0 else score)
 
     return rewards
+
 
 """
 def _extract_label_if_any(text: str) -> Optional[str]:
@@ -474,7 +473,7 @@ def run_trainer(
     _write_grpo_config(config_for_log, training_args.output_dir)
     _write_reward_source(training_args.output_dir)
 
-    reward_funcs = [format_reward_simple]
+    reward_funcs = [format_reward]
     save_steps = training_args.save_steps or GRPO_TRAINING_CONFIG.get("save_steps")
     log_state = _RewardLogState(
         num_funcs=len(reward_funcs),
