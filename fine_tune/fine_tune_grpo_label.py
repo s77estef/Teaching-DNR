@@ -32,7 +32,7 @@ from fine_tune.shared import SYSTEM_PROMPT, SYSTEM_PROMPT_FS, load_wildguard_tra
 
 # ---- config settings ----
 
-TRAIN_SAMPLES = 30
+TRAIN_SAMPLES = 150
 #MODEL_ID = "Qwen/Qwen2-0.5B-Instruct"
 #MODEL_ID = "Qwen/Qwen3-4B-Thinking-2507"
 #MODEL_ID = "Qwen/Qwen3-4B-Instruct-2507"
@@ -87,7 +87,7 @@ GRPO_TRAINING_CONFIG_B = {
     "temperature": 1.5, # (default 1.0) higher, 1.1 or 1.2
     "top_p": 0.9, # (default 1.0) lower, 0.9 
     #"top_k": 50, # (default None) keeps random tokens at bay with higher temperature
-    "generation_kwargs": {  # <- this is where do_sample goes
+    "generation_kwargs": {
         "do_sample": True,
     },
     "max_prompt_length": 256,
@@ -183,10 +183,10 @@ def format_reward_simple(completions, **_):
 
         # 0 reward if any tag is doubled
         if (
-            n_open_think   >= 1 or
-            n_close_think  >= 1 or
-            n_open_answer  >= 1 or
-            n_close_answer >= 1
+            n_open_think   > 1 or
+            n_close_think  > 1 or
+            n_open_answer  > 1 or
+            n_close_answer > 1
         ):
             rewards.append(0.0)
             continue
@@ -352,42 +352,64 @@ def _write_reward_batch_log(step: int, output_dir: str, payload: Dict[str, Any])
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
     output_file = checkpoint_dir / CHECKPOINT_BATCH_LOG_FILENAME
     with output_file.open("w", encoding="utf-8") as fout:
-        system_prompt = None
-        if prompts:
-            system_prompt, _ = _extract_system_user(prompts[0])
-        fout.write(f"step: {step}\n")
-        if system_prompt:
-            fout.write(f"system_prompt: {system_prompt}\n")
-        fout.write("\n")
+        def _write_entry(entry: Dict[str, Any]) -> None:
+            fout.write(json.dumps(entry, ensure_ascii=True, indent=2))
+            fout.write("\n\n")
 
-        num_groups = num_prompts if group_size else batch_size
-        for group_idx in range(num_groups):
-            start_idx = group_idx * group_size if group_size else group_idx
-            end_idx = start_idx + group_size if group_size else start_idx + 1
-            prompt_val = (
-                prompts_list[group_idx]
-                if prompts_list and group_idx < len(prompts_list)
-                else prompts[start_idx]
-            )
-            solution_val = (
-                solutions_list[group_idx]
-                if solutions_list and group_idx < len(solutions_list)
-                else solutions[start_idx]
-            )
+        system_prompt = SYSTEM_PROMPT
+        if prompts:
+            extracted_system, _ = _extract_system_user(prompts[0])
+            if extracted_system:
+                system_prompt = extracted_system
+        header = {"step": step, "system_prompt": system_prompt}
+        _write_entry(header)
+
+        if batch_size == 0:
+            return
+
+        if group_size:
+            prompt_keys = []
+            for prompt_val in prompts_list or []:
+                _, user_prompt = _extract_system_user(prompt_val)
+                prompt_keys.extend([user_prompt] * group_size)
+        else:
+            prompt_keys = []
+            for prompt_val in prompts:
+                _, user_prompt = _extract_system_user(prompt_val)
+                prompt_keys.append(user_prompt)
+
+        groups: List[Tuple[int, int]] = []
+        start_idx = 0
+        for idx in range(1, batch_size):
+            if prompt_keys[idx] != prompt_keys[idx - 1]:
+                groups.append((start_idx, idx))
+                start_idx = idx
+        groups.append((start_idx, batch_size))
+
+        for start_idx, end_idx in groups:
+            prompt_val = prompts[start_idx]
+            solution_val = solutions[start_idx]
             _, user_prompt = _extract_system_user(prompt_val)
-            fout.write(f"prompt: {_safe_json_value(user_prompt)}\n")
-            if solution_val is not None:
-                fout.write(f"solution: {_safe_json_value(solution_val)}\n")
-            fout.write("completions:\n")
-            for completion in completions[start_idx:end_idx]:
-                fout.write(f"- {_completion_to_text(completion)}\n")
-            for name, rewards in rewards_by_func.items():
-                if isinstance(rewards, (list, tuple)) and len(rewards) >= end_idx:
-                    rewards_slice = list(rewards[start_idx:end_idx])
-                else:
-                    rewards_slice = None
-                fout.write(f"rewards[{name}]: {_safe_json_value(rewards_slice)}\n")
-            fout.write("\n")
+            completion_group = [
+                _completion_to_text(item) for item in completions[start_idx:end_idx]
+            ]
+            reward_totals = []
+            for local_idx in range(start_idx, end_idx):
+                total = 0.0
+                for rewards in rewards_by_func.values():
+                    if isinstance(rewards, (list, tuple)) and local_idx < len(rewards):
+                        try:
+                            total += float(rewards[local_idx])
+                        except (TypeError, ValueError):
+                            total += 0.0
+                reward_totals.append(total)
+            entry = {
+                "prompt": _safe_json_value(user_prompt),
+                "solution": _safe_json_value(solution_val),
+                "completions": completion_group,
+                "rewards": reward_totals,
+            }
+            _write_entry(entry)
 
 
 class _RewardLogState:
