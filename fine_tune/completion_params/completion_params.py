@@ -12,7 +12,7 @@ import torch
 from datasets import Dataset
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.append(str(PROJECT_ROOT))
 
@@ -36,7 +36,6 @@ GENERATION_CONFIG: Dict[str, Any] = {
     "batch_size": 4,
 }
 
-LOG_STEP = 1
 CHECKPOINT_BATCH_LOG_FILENAME = "checkpoint_batch_samples.jsonl"
 
 
@@ -188,7 +187,7 @@ def _extract_system_user(prompt_val: Any) -> Tuple[str | None, str | None]:
     return None, str(prompt_val)
 
 
-def _write_reward_batch_log(step: int, output_dir: str, payload: Dict[str, Any]) -> None:
+def _write_reward_batch_log(output_dir: str, payload: Dict[str, Any]) -> None:
     completions = payload.get("completions") or []
     if not isinstance(completions, list):
         completions = [completions]
@@ -196,8 +195,8 @@ def _write_reward_batch_log(step: int, output_dir: str, payload: Dict[str, Any])
     batch_size = len(completions)
     raw_prompts = payload.get("prompts")
     raw_solutions = payload.get("solutions")
-    prompts_list = list(raw_prompts) if isinstance(raw_prompts, (list, tuple)) else None
-    solutions_list = list(raw_solutions) if isinstance(raw_solutions, (list, tuple)) else None
+    prompts_list = list(raw_prompts) if raw_prompts is not None else None
+    solutions_list = list(raw_solutions) if raw_solutions is not None else None
     num_prompts = len(prompts_list) if prompts_list else 0
     group_size = (
         batch_size // num_prompts
@@ -207,9 +206,9 @@ def _write_reward_batch_log(step: int, output_dir: str, payload: Dict[str, Any])
     prompts = _normalize_list(raw_prompts, batch_size)
     solutions = _normalize_list(raw_solutions, batch_size)
 
-    checkpoint_dir = Path(output_dir) / f"checkpoint-{step}"
-    checkpoint_dir.mkdir(parents=True, exist_ok=True)
-    output_file = checkpoint_dir / CHECKPOINT_BATCH_LOG_FILENAME
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+    output_file = output_path / CHECKPOINT_BATCH_LOG_FILENAME
     with output_file.open("w", encoding="utf-8") as fout:
         def _write_entry(entry: Dict[str, Any]) -> None:
             fout.write(json.dumps(entry, ensure_ascii=True, indent=2))
@@ -220,35 +219,50 @@ def _write_reward_batch_log(step: int, output_dir: str, payload: Dict[str, Any])
             extracted_system, _ = _extract_system_user(prompts[0])
             if extracted_system:
                 system_prompt = extracted_system
-        header = {"step": step, "system_prompt": system_prompt}
+        header = {
+            "generation_config": payload.get("generation_config"),
+            "reward_mad": payload.get("reward_mad"),
+            "system_prompt": system_prompt,
+        }
         _write_entry(header)
 
         if batch_size == 0:
             return
 
         if group_size:
-            prompt_keys = []
-            for prompt_val in prompts_list or []:
-                _, user_prompt = _extract_system_user(prompt_val)
-                prompt_keys.extend([user_prompt] * group_size)
+            groups: List[Tuple[int, int]] = []
+            for idx in range(num_prompts):
+                start_idx = idx * group_size
+                end_idx = start_idx + group_size
+                groups.append((start_idx, end_idx))
         else:
             prompt_keys = []
             for prompt_val in prompts:
                 _, user_prompt = _extract_system_user(prompt_val)
+                if user_prompt is None:
+                    user_prompt = str(prompt_val)
                 prompt_keys.append(user_prompt)
 
-        groups: List[Tuple[int, int]] = []
-        start_idx = 0
-        for idx in range(1, batch_size):
-            if prompt_keys[idx] != prompt_keys[idx - 1]:
-                groups.append((start_idx, idx))
-                start_idx = idx
-        groups.append((start_idx, batch_size))
+            groups = []
+            start_idx = 0
+            for idx in range(1, batch_size):
+                if prompt_keys[idx] != prompt_keys[idx - 1]:
+                    groups.append((start_idx, idx))
+                    start_idx = idx
+            groups.append((start_idx, batch_size))
 
-        for start_idx, end_idx in groups:
-            prompt_val = prompts[start_idx]
-            solution_val = solutions[start_idx]
+        for group_idx, (start_idx, end_idx) in enumerate(groups):
+            if group_size and prompts_list:
+                prompt_val = prompts_list[group_idx]
+            else:
+                prompt_val = prompts[start_idx]
+            if group_size and solutions_list:
+                solution_val = solutions_list[group_idx]
+            else:
+                solution_val = solutions[start_idx]
             _, user_prompt = _extract_system_user(prompt_val)
+            if user_prompt is None:
+                user_prompt = str(prompt_val)
             completion_group = [
                 _completion_to_text(item) for item in completions[start_idx:end_idx]
             ]
@@ -294,6 +308,13 @@ def _batched(items: Sequence[Any], batch_size: int) -> Sequence[Sequence[Any]]:
         yield items[start : start + batch_size]
 
 
+def _mean_absolute_deviation(values: Sequence[float]) -> float:
+    if not values:
+        return 0.0
+    mean_val = sum(values) / float(len(values))
+    return sum(abs(v - mean_val) for v in values) / float(len(values))
+
+
 def generate_completions(
     model: torch.nn.Module,
     tokenizer: AutoTokenizer,
@@ -315,17 +336,17 @@ def generate_completions(
         )
         tokenized = {k: v.to(model.device) for k, v in tokenized.items()}
         input_lengths = tokenized["attention_mask"].sum(dim=1).tolist()
-        allowed_args = set(model.generation_config.to_dict().keys()) | {\"max_new_tokens\"}
+        allowed_args = set(model.generation_config.to_dict().keys()) | {"max_new_tokens"}
         gen_kwargs = {
-            \"max_new_tokens\": int(generation_config[\"max_completion_length\"]),
-            \"do_sample\": bool(generation_config.get(\"do_sample\", True)),
-            \"temperature\": float(generation_config.get(\"temperature\", 1.0)),
-            \"top_p\": float(generation_config.get(\"top_p\", 1.0)),
-            \"top_k\": int(generation_config.get(\"top_k\", 0)),
-            \"min_p\": float(generation_config.get(\"min_p\", 0.0)),
-            \"repetition_penalty\": float(generation_config.get(\"repetition_penalty\", 1.0)),
-            \"num_return_sequences\": num_generations,
-            \"pad_token_id\": tokenizer.eos_token_id,
+            "max_new_tokens": int(generation_config["max_completion_length"]),
+            "do_sample": bool(generation_config.get("do_sample", True)),
+            "temperature": float(generation_config.get("temperature", 1.0)),
+            "top_p": float(generation_config.get("top_p", 1.0)),
+            "top_k": int(generation_config.get("top_k", 0)),
+            "min_p": float(generation_config.get("min_p", 0.0)),
+            "repetition_penalty": float(generation_config.get("repetition_penalty", 1.0)),
+            "num_return_sequences": num_generations,
+            "pad_token_id": tokenizer.eos_token_id,
         }
         gen_kwargs = {k: v for k, v in gen_kwargs.items() if k in allowed_args}
         with torch.no_grad():
@@ -361,6 +382,14 @@ def run_generation() -> None:
     start_time = time.time()
     completions = generate_completions(model, tokenizer, prompts, GENERATION_CONFIG)
     rewards = format_reward(completions)
+    group_size = int(GENERATION_CONFIG.get("num_generations", 1))
+    reward_mads = []
+    if group_size > 0:
+        for start in range(0, len(rewards), group_size):
+            group = rewards[start : start + group_size]
+            if len(group) == group_size:
+                reward_mads.append(_mean_absolute_deviation(group))
+    reward_mad = sum(reward_mads) / float(len(reward_mads)) if reward_mads else 0.0
     elapsed = time.time() - start_time
     print(f"Generated {len(completions)} samples in {elapsed:.1f}s")
 
@@ -369,8 +398,10 @@ def run_generation() -> None:
         "rewards": {"format_reward": rewards},
         "prompts": list(prompts),
         "solutions": list(solutions),
+        "generation_config": dict(GENERATION_CONFIG),
+        "reward_mad": reward_mad,
     }
-    _write_reward_batch_log(LOG_STEP, OUTPUT_DIR, payload)
+    _write_reward_batch_log(OUTPUT_DIR, payload)
 
 
 def main() -> None:
