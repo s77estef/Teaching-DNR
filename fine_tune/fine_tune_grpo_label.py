@@ -32,7 +32,7 @@ from fine_tune.shared import SYSTEM_PROMPT, SYSTEM_PROMPT_FS, load_wildguard_tra
 
 # ---- config settings ----
 
-TRAIN_SAMPLES = 10000
+TRAIN_SAMPLES = 60
 #MODEL_ID = "Qwen/Qwen2-0.5B-Instruct"
 #MODEL_ID = "Qwen/Qwen3-4B-Thinking-2507"
 #MODEL_ID = "Qwen/Qwen3-4B-Instruct-2507"
@@ -71,7 +71,8 @@ GRPO_TRAINING_CONFIG_C = {
 }
 GRPO_TRAINING_CONFIG_B = {
     "output_dir": OUTPUT_DIR,
-    "learning_rate": 1e-4,
+    "learning_rate": 1e-5,
+    "beta": 0.02, # KL regularization, keeps policy close to reference
     "remove_unused_columns": False,
     # pdtbs 8: 37GB, pdtbs 16: 41-OOM
     # good: pdtbs 21, gas none, 43GB
@@ -84,14 +85,16 @@ GRPO_TRAINING_CONFIG_B = {
     "bf16": True,
     "max_completion_length": 512,
     "num_generations": 4,
-    "temperature": 1.6, # (default 1.0) 2.0 is too much
-    "top_p": 0.8, # (default 1.0) 0.8 or 0.9 
-    #"top_k": 50, # (default None) keeps random tokens at bay with higher temperature
+    "temperature": 1.1, # (default 1.0) 2.0 is way too much
+    "top_p": 0.9, # (default 1.0) keep smallest set of tokens whose cumulative probability ≥ p
+    "top_k": 50, # (default None) keep k most probable tokens
+    "min_p": 0.05, # discard any token whose individual probability < p
+    "repetition_penalty": 1.05, # penalize repeated tags or loops
     "generation_kwargs": {
         "do_sample": True,
     },
     "max_prompt_length": 256,
-    #"report_to": ["wandb"],
+    "report_to": ["wandb"],
     "logging_steps": 10,
     "save_strategy": "steps",
     "save_steps": 25,
@@ -150,7 +153,7 @@ def load_lora_model(lora_overrides: Dict[str, Any] | None = None) -> torch.nn.Mo
 
 # --------------------------------------------------------- REWARDS
 
-import re
+
 
 FULL_RE = re.compile(
     r"^\s*<think>.*?</think>\s*<answer>\s*(?P<label>harmful|unharmful)\s*</answer>\s*$",
@@ -213,8 +216,8 @@ def format_reward(completions, **_):
 
     return rewards
 
-
 """
+
 def _extract_label_if_any(text: str) -> Optional[str]:
     # Extract label only if FULL_RE matches exactly. Returns normalized label or None.
     m = FULL_RE.match(text or "")
@@ -222,7 +225,7 @@ def _extract_label_if_any(text: str) -> Optional[str]:
         return None
     return (m.group("label") or "").lower()
 
-def accuracy_reward_strict(completions, **kwargs):
+def accuracy_reward(completions, **kwargs):
     # Strict accuracy: only award accuracy if FULL_RE matches exactly.
     # Returns 1.0 if predicted label equals gold, else 0.0.
     solutions = kwargs["solution"]
@@ -236,6 +239,7 @@ def accuracy_reward_strict(completions, **kwargs):
         gold = (solution or "").lower()
         rewards.append(1.0 if pred == gold else 0.0)
     return rewards
+
 """
 
 # --------------------------------------------------------- REWARDS
