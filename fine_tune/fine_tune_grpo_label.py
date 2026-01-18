@@ -32,7 +32,7 @@ from fine_tune.shared import SYSTEM_PROMPT, SYSTEM_PROMPT_FS, load_wildguard_tra
 
 # ---- config settings ----
 
-TRAIN_SAMPLES = 60
+TRAIN_SAMPLES = 100
 #MODEL_ID = "Qwen/Qwen2-0.5B-Instruct"
 #MODEL_ID = "Qwen/Qwen3-4B-Thinking-2507"
 #MODEL_ID = "Qwen/Qwen3-4B-Instruct-2507"
@@ -72,7 +72,7 @@ GRPO_TRAINING_CONFIG_C = {
 GRPO_TRAINING_CONFIG_B = {
     "output_dir": OUTPUT_DIR,
     "learning_rate": 1e-5,
-    "beta": 0.02, # KL regularization, keeps policy close to reference
+    #"beta": 0.02, # KL regularization, keeps policy close to reference
     "remove_unused_columns": False,
     # pdtbs 8: 37GB, pdtbs 16: 41-OOM
     # good: pdtbs 21, gas none, 43GB
@@ -85,19 +85,19 @@ GRPO_TRAINING_CONFIG_B = {
     "bf16": True,
     "max_completion_length": 512,
     "num_generations": 4,
-    "temperature": 1.1, # (default 1.0) 2.0 is way too much
-    "top_p": 0.9, # (default 1.0) keep smallest set of tokens whose cumulative probability ≥ p
-    "top_k": 50, # (default None) keep k most probable tokens
-    "min_p": 0.05, # discard any token whose individual probability < p
-    "repetition_penalty": 1.05, # penalize repeated tags or loops
-    "generation_kwargs": {
-        "do_sample": True,
-    },
+    "temperature": 0.7, # (default 1.0) 2.0 is way too much
+    #"top_p": 0.8, # (default 1.0) keep smallest set of tokens whose cumulative probability ≥ p
+    #"top_k": 50, # (default None) keep k most probable tokens
+    #"min_p": 0.05, # discard any token whose individual probability < p
+    #"repetition_penalty": 1.05, # penalize repeated tags or loops
+    #"generation_kwargs": {
+    #    "do_sample": True,
+    #},
     "max_prompt_length": 256,
     "report_to": ["wandb"],
     "logging_steps": 10,
     "save_strategy": "steps",
-    "save_steps": 25,
+    "save_steps": 1,
 }
 GRPO_TRAINING_CONFIG = GRPO_TRAINING_CONFIG_B
 
@@ -105,7 +105,7 @@ LORA_CONFIG: Dict[str, Any] = {
     "task_type": "CAUSAL_LM",
     "r": 32,
     "lora_alpha": 64,
-    "lora_dropout": 0.1,  # possibly higher dropout with 0.1?
+    "lora_dropout": 0.1,
     "target_modules": [
         "q_proj",
         "k_proj",
@@ -159,14 +159,36 @@ FULL_RE = re.compile(
     r"^\s*<think>.*?</think>\s*<answer>\s*(?P<label>harmful|unharmful)\s*</answer>\s*$",
     re.DOTALL | re.IGNORECASE,
 )
+"""
+def format_reward(completions, **_):
+    # all or nothing format reward
+    rewards = []
+    for completion in completions:
+        text = completion[0].get("content") or ""
+        rewards.append(1.0 if FULL_RE.match(text) else 0.0)
+    return rewards
 
-# Strict tags: no whitespace inside angle brackets
+"""
+
+def format_reward(completions, **kwargs):
+    print("KWARGS KEYS:", sorted(kwargs.keys()))
+    p = kwargs.get("prompts") or kwargs.get("prompt")
+    print("PROMPT TYPE:", type(p), "LEN:" if isinstance(p, list) else "", (len(p) if isinstance(p, list) else ""))
+    print("=== DEBUG completion[0] repr ===")
+    print(repr(completions[0][0].get("content", ""))[:500])
+    print("=== DEBUG prompt repr ===")
+    p = (kwargs.get("prompts") or kwargs.get("prompt"))
+    print(repr(p[0] if isinstance(p, list) else p)[:500])
+
+
+"""
+# no whitespace inside angle brackets
 OPEN_THINK_RE   = re.compile(r"<think>", re.IGNORECASE)
 CLOSE_THINK_RE  = re.compile(r"</think>", re.IGNORECASE)
 OPEN_ANSWER_RE  = re.compile(r"<answer>", re.IGNORECASE)
 CLOSE_ANSWER_RE = re.compile(r"</answer>", re.IGNORECASE)
 
-# (Optional but recommended) forbid any tag except exact think/answer open/close
+# forbid any tag except exact think/answer open/close
 FORBIDDEN_RE = re.compile(
     r"<(?!/?(?:think|answer)>)[^>]+>",
     re.IGNORECASE,
@@ -216,18 +238,18 @@ def format_reward(completions, **_):
 
     return rewards
 
-"""
+
 
 def _extract_label_if_any(text: str) -> Optional[str]:
-    # Extract label only if FULL_RE matches exactly. Returns normalized label or None.
+    # Extract label only if FULL_RE matches exactly. Returns normalized label or None
     m = FULL_RE.match(text or "")
     if not m:
         return None
     return (m.group("label") or "").lower()
 
 def accuracy_reward(completions, **kwargs):
-    # Strict accuracy: only award accuracy if FULL_RE matches exactly.
-    # Returns 1.0 if predicted label equals gold, else 0.0.
+    # Strict accuracy: only award accuracy if FULL_RE matches exactly
+    # Returns 1.0 if predicted label equals gold, else 0.0
     solutions = kwargs["solution"]
     rewards = []
     for completion, solution in zip(completions, solutions):
@@ -241,6 +263,7 @@ def accuracy_reward(completions, **kwargs):
     return rewards
 
 """
+
 
 # --------------------------------------------------------- REWARDS
 
@@ -470,7 +493,8 @@ def run_trainer(
     training_args: GRPOConfig,
     training_config: Dict[str, Any] | None = None,
 ) -> GRPOTrainer:
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, padding_side="left", use_fast=True)
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, use_fast=True)
+    tokenizer.padding_side = "right"
     tokenizer.pad_token = tokenizer.eos_token
 
     config_for_log = copy.deepcopy(training_config or GRPO_TRAINING_CONFIG)
@@ -519,7 +543,7 @@ def run_trainer(
 def main() -> None:
     hf_cli_login()
     wandb_cli_login()
-    train_ds = load_wildguard_train(num_samples=TRAIN_SAMPLES, max_tokens=GRPO_TRAINING_CONFIG["max_completion_length"]) # 170 = 256 (max_prompt_length) - 86 (system prompt)
+    train_ds = load_wildguard_train(num_samples=TRAIN_SAMPLES, max_tokens=GRPO_TRAINING_CONFIG["max_prompt_length"] - 86) # 170 = 256 (max_prompt_length) - 86 (system prompt)
     train_ds = attach_prompts(train_ds)
     print(train_ds)
 
