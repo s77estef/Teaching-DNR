@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+import itertools
 import json
 import os
 import re
@@ -27,12 +28,12 @@ GENERATION_CONFIG: Dict[str, Any] = {
     "max_prompt_length": 256,
     "max_completion_length": 512,
     "num_generations": 4,
-    "temperature": 1.1,
-    "top_p": 0.9,
-    "top_k": 50,
-    "min_p": 0.05,
-    "repetition_penalty": 1.05,
-    "do_sample": True,
+    "temperature": [0.7],
+    #"top_p": [0.6],
+    ##"top_k": [100],
+    #"min_p": [0.1],
+    #"repetition_penalty": 1.05,
+    #"do_sample": True,
     "batch_size": 4,
 }
 
@@ -41,7 +42,7 @@ CHECKPOINT_BATCH_LOG_FILENAME = "checkpoint_batch_samples.jsonl"
 
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 model_name = MODEL_ID.split("/", 1)[-1]
-OUTPUT_DIR = os.path.join(
+OUTPUT_DIR_BASE = os.path.join(
     os.path.dirname(__file__),
     f"{model_name}-GEN-test_{timestamp}",
 )
@@ -187,7 +188,7 @@ def _extract_system_user(prompt_val: Any) -> Tuple[str | None, str | None]:
     return None, str(prompt_val)
 
 
-def _write_reward_batch_log(output_dir: str, payload: Dict[str, Any]) -> None:
+def _write_reward_batch_log(output_dir: str, output_filename: str, payload: Dict[str, Any]) -> None:
     completions = payload.get("completions") or []
     if not isinstance(completions, list):
         completions = [completions]
@@ -208,7 +209,7 @@ def _write_reward_batch_log(output_dir: str, payload: Dict[str, Any]) -> None:
 
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
-    output_file = output_path / CHECKPOINT_BATCH_LOG_FILENAME
+    output_file = output_path / output_filename
     with output_file.open("w", encoding="utf-8") as fout:
         def _write_entry(entry: Dict[str, Any]) -> None:
             fout.write(json.dumps(entry, ensure_ascii=True, indent=2))
@@ -315,6 +316,20 @@ def _mean_absolute_deviation(values: Sequence[float]) -> float:
     return sum(abs(v - mean_val) for v in values) / float(len(values))
 
 
+def _as_list(value: Any) -> List[Any]:
+    if isinstance(value, (list, tuple)):
+        return list(value)
+    return [value]
+
+
+def _format_param(value: Any) -> str:
+    if value is None:
+        return "none"
+    if isinstance(value, float):
+        return f"{value:g}"
+    return str(value)
+
+
 def generate_completions(
     model: torch.nn.Module,
     tokenizer: AutoTokenizer,
@@ -335,19 +350,43 @@ def generate_completions(
             return_tensors="pt",
         )
         tokenized = {k: v.to(model.device) for k, v in tokenized.items()}
-        input_lengths = tokenized["attention_mask"].sum(dim=1).tolist()
+        prompt_len = tokenized["input_ids"].shape[1]
         allowed_args = set(model.generation_config.to_dict().keys()) | {"max_new_tokens"}
         gen_kwargs = {
             "max_new_tokens": int(generation_config["max_completion_length"]),
-            "do_sample": bool(generation_config.get("do_sample", True)),
-            "temperature": float(generation_config.get("temperature", 1.0)),
-            "top_p": float(generation_config.get("top_p", 1.0)),
-            "top_k": int(generation_config.get("top_k", 0)),
-            "min_p": float(generation_config.get("min_p", 0.0)),
-            "repetition_penalty": float(generation_config.get("repetition_penalty", 1.0)),
+            "do_sample": generation_config.get("do_sample"),
+            "temperature": generation_config.get("temperature"),
+            "top_p": generation_config.get("top_p"),
+            "top_k": generation_config.get("top_k"),
+            "min_p": generation_config.get("min_p"),
+            "repetition_penalty": generation_config.get("repetition_penalty"),
             "num_return_sequences": num_generations,
             "pad_token_id": tokenizer.eos_token_id,
         }
+        if gen_kwargs.get("temperature") is None:
+            gen_kwargs.pop("temperature", None)
+        else:
+            gen_kwargs["temperature"] = float(gen_kwargs["temperature"])
+        if gen_kwargs.get("top_p") is None:
+            gen_kwargs.pop("top_p", None)
+        else:
+            gen_kwargs["top_p"] = float(gen_kwargs["top_p"])
+        if gen_kwargs.get("top_k") is None:
+            gen_kwargs.pop("top_k", None)
+        else:
+            gen_kwargs["top_k"] = int(gen_kwargs["top_k"])
+        if gen_kwargs.get("min_p") is None:
+            gen_kwargs.pop("min_p", None)
+        else:
+            gen_kwargs["min_p"] = float(gen_kwargs["min_p"])
+        if gen_kwargs.get("repetition_penalty") is None:
+            gen_kwargs.pop("repetition_penalty", None)
+        else:
+            gen_kwargs["repetition_penalty"] = float(gen_kwargs["repetition_penalty"])
+        if gen_kwargs.get("do_sample") is None:
+            gen_kwargs.pop("do_sample", None)
+        else:
+            gen_kwargs["do_sample"] = bool(gen_kwargs["do_sample"])
         gen_kwargs = {k: v for k, v in gen_kwargs.items() if k in allowed_args}
         with torch.no_grad():
             outputs = model.generate(
@@ -356,12 +395,32 @@ def generate_completions(
             )
 
         for seq_idx, seq in enumerate(outputs):
-            prompt_idx = seq_idx // num_generations
-            input_len = int(input_lengths[prompt_idx])
-            text = tokenizer.decode(seq[input_len:], skip_special_tokens=True)
+            text = tokenizer.decode(seq[prompt_len:], skip_special_tokens=True)
             completions.append([{"content": text}])
 
     return completions
+
+
+def _iter_generation_configs(base_config: Dict[str, Any]) -> Sequence[Dict[str, Any]]:
+    temperatures = _as_list(base_config.get("temperature"))
+    top_ps = _as_list(base_config.get("top_p"))
+    top_ks = _as_list(base_config.get("top_k"))
+    min_ps = _as_list(base_config.get("min_p"))
+    for temp, top_p, top_k, min_p in itertools.product(temperatures, top_ps, top_ks, min_ps):
+        cfg = dict(base_config)
+        cfg["temperature"] = temp
+        cfg["top_p"] = top_p
+        cfg["top_k"] = top_k
+        cfg["min_p"] = min_p
+        yield cfg
+
+
+def _output_filename_for_config(generation_config: Dict[str, Any]) -> str:
+    temp = _format_param(generation_config.get("temperature"))
+    top_p = _format_param(generation_config.get("top_p"))
+    top_k = _format_param(generation_config.get("top_k"))
+    min_p = _format_param(generation_config.get("min_p"))
+    return f"GEN-{temp}-{top_p}-{top_k}-{min_p}.jsonl"
 
 
 def run_generation() -> None:
@@ -379,29 +438,35 @@ def run_generation() -> None:
     tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, padding_side="left", use_fast=True)
     tokenizer.pad_token = tokenizer.eos_token
 
-    start_time = time.time()
-    completions = generate_completions(model, tokenizer, prompts, GENERATION_CONFIG)
-    rewards = format_reward(completions)
-    group_size = int(GENERATION_CONFIG.get("num_generations", 1))
-    reward_mads = []
-    if group_size > 0:
-        for start in range(0, len(rewards), group_size):
-            group = rewards[start : start + group_size]
-            if len(group) == group_size:
-                reward_mads.append(_mean_absolute_deviation(group))
-    reward_mad = sum(reward_mads) / float(len(reward_mads)) if reward_mads else 0.0
-    elapsed = time.time() - start_time
-    print(f"Generated {len(completions)} samples in {elapsed:.1f}s")
+    for generation_config in _iter_generation_configs(GENERATION_CONFIG):
+        start_time = time.time()
+        completions = generate_completions(model, tokenizer, prompts, generation_config)
+        rewards = format_reward(completions)
+        group_size = int(generation_config.get("num_generations", 1))
+        reward_mads = []
+        if group_size > 0:
+            for start in range(0, len(rewards), group_size):
+                group = rewards[start : start + group_size]
+                if len(group) == group_size:
+                    reward_mads.append(_mean_absolute_deviation(group))
+        reward_mad = sum(reward_mads) / float(len(reward_mads)) if reward_mads else 0.0
+        elapsed = time.time() - start_time
+        print(
+            f"Generated {len(completions)} samples in {elapsed:.1f}s "
+            f"for temp={generation_config['temperature']} top_p={generation_config['top_p']} "
+            f"top_k={generation_config['top_k']} min_p={generation_config['min_p']}"
+        )
 
-    payload = {
-        "completions": completions,
-        "rewards": {"format_reward": rewards},
-        "prompts": list(prompts),
-        "solutions": list(solutions),
-        "generation_config": dict(GENERATION_CONFIG),
-        "reward_mad": reward_mad,
-    }
-    _write_reward_batch_log(OUTPUT_DIR, payload)
+        payload = {
+            "completions": completions,
+            "rewards": {"format_reward": rewards},
+            "prompts": list(prompts),
+            "solutions": list(solutions),
+            "generation_config": dict(generation_config),
+            "reward_mad": reward_mad,
+        }
+        output_filename = _output_filename_for_config(generation_config)
+        _write_reward_batch_log(OUTPUT_DIR_BASE, output_filename, payload)
 
 
 def main() -> None:
