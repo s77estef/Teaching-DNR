@@ -28,7 +28,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.append(str(PROJECT_ROOT))
 
-from fine_tune.shared import SYSTEM_PROMPT, SYSTEM_PROMPT_FS, load_wildguard_train, hf_cli_login, wandb_cli_login
+from fine_tune.shared import SYSTEM_PROMPT, SYSTEM_PROMPT_FS, load_wildguard_train_rendered, hf_cli_login, wandb_cli_login
 
 # ---- config settings ----
 
@@ -120,6 +120,7 @@ LORA_CONFIG: Dict[str, Any] = {
 
 # ------------------------------------
 
+"""
 
 def attach_prompts(dataset: Dataset) -> Dataset:
     def make_conversation(example: Dict) -> Dict[str, List[Dict[str, str]]]:
@@ -133,6 +134,28 @@ def attach_prompts(dataset: Dataset) -> Dataset:
     dataset = dataset.map(lambda ex: {**ex, "solution": ex["solution"].lower()})
     return dataset.map(make_conversation)
 
+def attach_prompts(dataset: Dataset, tokenizer: AutoTokenizer) -> Dataset:
+    dataset = dataset.rename_column("prompt_harm_label", "solution")
+    dataset = dataset.map(lambda ex: {**ex, "solution": ex["solution"].lower()})
+
+    def make(example):
+        msgs = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": example["prompt"]},
+        ]
+        rendered = tokenizer.apply_chat_template(
+            msgs,
+            tokenize=False,
+            add_generation_prompt=True,
+        )
+        return {
+            "prompt": rendered,
+            "solution": example["solution"],
+        }
+
+    dataset = dataset.map(make)
+    return dataset
+"""
 
 def load_lora_model(lora_overrides: Dict[str, Any] | None = None) -> torch.nn.Module:
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -153,35 +176,65 @@ def load_lora_model(lora_overrides: Dict[str, Any] | None = None) -> torch.nn.Mo
 
 # --------------------------------------------------------- REWARDS
 
+def completion_to_text(completion) -> str:
+    # TRL common shape: [{"content": "..."}]
+    if isinstance(completion, list) and completion:
+        first = completion[0]
+        if isinstance(first, dict) and "content" in first:
+            return str(first["content"] or "")
+        if isinstance(first, str):
+            return first
+    # fallback
+    if isinstance(completion, str):
+        return completion
+    return ""
 
 
 FULL_RE = re.compile(
     r"^\s*<think>.*?</think>\s*<answer>\s*(?P<label>harmful|unharmful)\s*</answer>\s*$",
     re.DOTALL | re.IGNORECASE,
 )
-"""
+
 def format_reward(completions, **_):
-    # all or nothing format reward
     rewards = []
     for completion in completions:
-        text = completion[0].get("content") or ""
+        text = completion_to_text(completion).strip()
         rewards.append(1.0 if FULL_RE.match(text) else 0.0)
     return rewards
 
 """
 
+def format_reward(completions, **_):
+    # all or nothing format reward
+    rewards = []
+    for completion in completions:
+        print("COMPLETION START-----------------------------")
+        print(completion)
+        print("COMPLETION END-----------------------------")
+        text = completion[0] or ""
+        rewards.append(1.0 if FULL_RE.match(text) else 0.0)
+    return rewards
+
 def format_reward(completions, **kwargs):
-    print("KWARGS KEYS:", sorted(kwargs.keys()))
-    p = kwargs.get("prompts") or kwargs.get("prompt")
-    print("PROMPT TYPE:", type(p), "LEN:" if isinstance(p, list) else "", (len(p) if isinstance(p, list) else ""))
-    print("=== DEBUG completion[0] repr ===")
-    print(repr(completions[0][0].get("content", ""))[:500])
-    print("=== DEBUG prompt repr ===")
-    p = (kwargs.get("prompts") or kwargs.get("prompt"))
-    print(repr(p[0] if isinstance(p, list) else p)[:500])
+    print("FORMAT DEBUG: COMPLETION IDS ---------------------------------")
+    cid = kwargs["completion_ids"]          # list of token-id lists
+    # decode the first completion id list
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, use_fast=True)
+    decoded = tokenizer.decode(cid[0], skip_special_tokens=True)
+
+    print("TR L completion content head:", repr((completions[0][0].get("content","")[:200])))
+    print("Decoded completion_ids head:", repr(decoded[:200]))
+
+    print("FORMAT DEBUG: PROMPTS ---------------------------------")
+    p = kwargs["prompts"]
+    print("PROMPTS[0] TYPE:", type(p[0]))
+    if isinstance(p[0], str):
+        print("PROMPTS[0] HEAD:", repr(p[0][:200]))
+    else:
+        # list/dict case
+        print("PROMPTS[0] REPR HEAD:", repr(p[0])[:500])
 
 
-"""
 # no whitespace inside angle brackets
 OPEN_THINK_RE   = re.compile(r"<think>", re.IGNORECASE)
 CLOSE_THINK_RE  = re.compile(r"</think>", re.IGNORECASE)
@@ -263,6 +316,36 @@ def accuracy_reward(completions, **kwargs):
     return rewards
 
 """
+
+def _extract_label_if_any(text: str) -> Optional[str]:
+    # Extract label only if FULL_RE matches exactly
+    m = FULL_RE.match(text or "")
+    if not m:
+        return None
+    return (m.group("label") or "").lower()
+
+def accuracy_reward(completions, **kwargs):
+    """
+    Strict accuracy reward:
+    - FULL_RE must match exactly
+    - label must be extractable
+    - label must equal gold
+    """
+    solutions = kwargs["solution"]
+    rewards = []
+
+    for completion, solution in zip(completions, solutions):
+        text = completion_to_text(completion).strip()
+        pred = _extract_label_if_any(text)
+
+        if pred is None:
+            rewards.append(0.0)
+            continue
+
+        gold = (solution or "").lower()
+        rewards.append(1.0 if pred == gold else 0.0)
+
+    return rewards
 
 
 # --------------------------------------------------------- REWARDS
@@ -543,13 +626,19 @@ def run_trainer(
 def main() -> None:
     hf_cli_login()
     wandb_cli_login()
-    train_ds = load_wildguard_train(num_samples=TRAIN_SAMPLES, max_tokens=GRPO_TRAINING_CONFIG["max_prompt_length"] - 86) # 170 = 256 (max_prompt_length) - 86 (system prompt)
-    train_ds = attach_prompts(train_ds)
+
+    train_ds = load_wildguard_train_rendered(
+        num_samples=TRAIN_SAMPLES,
+        max_prompt_tokens=GRPO_TRAINING_CONFIG["max_prompt_length"],
+        tokenizer_name=MODEL_ID,
+        system_prompt=SYSTEM_PROMPT,
+    )
     print(train_ds)
 
     model = load_lora_model()
     training_args = build_training_args()
     trainer = run_trainer(model, train_ds, training_args, GRPO_TRAINING_CONFIG)
+
 
 
 if __name__ == "__main__":
