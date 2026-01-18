@@ -120,43 +120,6 @@ LORA_CONFIG: Dict[str, Any] = {
 
 # ------------------------------------
 
-"""
-
-def attach_prompts(dataset: Dataset) -> Dataset:
-    def make_conversation(example: Dict) -> Dict[str, List[Dict[str, str]]]:
-        return {
-            "prompt": [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": example["prompt"]},
-            ]
-        }
-    dataset = dataset.rename_column("prompt_harm_label", "solution")
-    dataset = dataset.map(lambda ex: {**ex, "solution": ex["solution"].lower()})
-    return dataset.map(make_conversation)
-
-def attach_prompts(dataset: Dataset, tokenizer: AutoTokenizer) -> Dataset:
-    dataset = dataset.rename_column("prompt_harm_label", "solution")
-    dataset = dataset.map(lambda ex: {**ex, "solution": ex["solution"].lower()})
-
-    def make(example):
-        msgs = [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": example["prompt"]},
-        ]
-        rendered = tokenizer.apply_chat_template(
-            msgs,
-            tokenize=False,
-            add_generation_prompt=True,
-        )
-        return {
-            "prompt": rendered,
-            "solution": example["solution"],
-        }
-
-    dataset = dataset.map(make)
-    return dataset
-"""
-
 def load_lora_model(lora_overrides: Dict[str, Any] | None = None) -> torch.nn.Module:
     device = "cuda" if torch.cuda.is_available() else "cpu"
     dtype = torch.float16 if device == "cuda" else torch.float32
@@ -195,6 +158,8 @@ FULL_RE = re.compile(
     re.DOTALL | re.IGNORECASE,
 )
 
+"""
+
 def format_reward(completions, **_):
     rewards = []
     for completion in completions:
@@ -204,118 +169,6 @@ def format_reward(completions, **_):
 
 """
 
-def format_reward(completions, **_):
-    # all or nothing format reward
-    rewards = []
-    for completion in completions:
-        print("COMPLETION START-----------------------------")
-        print(completion)
-        print("COMPLETION END-----------------------------")
-        text = completion[0] or ""
-        rewards.append(1.0 if FULL_RE.match(text) else 0.0)
-    return rewards
-
-def format_reward(completions, **kwargs):
-    print("FORMAT DEBUG: COMPLETION IDS ---------------------------------")
-    cid = kwargs["completion_ids"]          # list of token-id lists
-    # decode the first completion id list
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, use_fast=True)
-    decoded = tokenizer.decode(cid[0], skip_special_tokens=True)
-
-    print("TR L completion content head:", repr((completions[0][0].get("content","")[:200])))
-    print("Decoded completion_ids head:", repr(decoded[:200]))
-
-    print("FORMAT DEBUG: PROMPTS ---------------------------------")
-    p = kwargs["prompts"]
-    print("PROMPTS[0] TYPE:", type(p[0]))
-    if isinstance(p[0], str):
-        print("PROMPTS[0] HEAD:", repr(p[0][:200]))
-    else:
-        # list/dict case
-        print("PROMPTS[0] REPR HEAD:", repr(p[0])[:500])
-
-
-# no whitespace inside angle brackets
-OPEN_THINK_RE   = re.compile(r"<think>", re.IGNORECASE)
-CLOSE_THINK_RE  = re.compile(r"</think>", re.IGNORECASE)
-OPEN_ANSWER_RE  = re.compile(r"<answer>", re.IGNORECASE)
-CLOSE_ANSWER_RE = re.compile(r"</answer>", re.IGNORECASE)
-
-# forbid any tag except exact think/answer open/close
-FORBIDDEN_RE = re.compile(
-    r"<(?!/?(?:think|answer)>)[^>]+>",
-    re.IGNORECASE,
-)
-
-def format_reward(completions, **_):
-    rewards = []
-    for completion in completions:
-        text = completion[0].get("content") or ""
-
-        # 0 reward if forbidden tag appears anywhere
-        if FORBIDDEN_RE.search(text):
-            rewards.append(0.0)
-            continue
-
-        # Count tags
-        n_open_think   = len(OPEN_THINK_RE.findall(text))
-        n_close_think  = len(CLOSE_THINK_RE.findall(text))
-        n_open_answer  = len(OPEN_ANSWER_RE.findall(text))
-        n_close_answer = len(CLOSE_ANSWER_RE.findall(text))
-
-        score = 0.0
-
-        # +0.1 for each tag that appears exactly once
-        if n_open_think == 1:
-            score += 0.1  # <think>
-        if n_close_think == 1:
-            score += 0.1  # </think>
-        if n_open_answer == 1:
-            score += 0.1  # <answer>
-        if n_close_answer == 1:
-            score += 0.1  # </answer>
-
-        # +0.1 nothing before <think>
-        if re.match(r"^\s*<think>", text, flags=re.IGNORECASE):
-            score += 0.1
-
-        # +0.1 nothing after </answer>
-        if re.search(r"</answer>\s*$", text, flags=re.IGNORECASE):
-            score += 0.1
-
-        # +0.4 full correct pattern
-        if FULL_RE.match(text):
-            score += 0.4
-
-        rewards.append(1.0 if score > 1.0 else score)
-
-    return rewards
-
-
-
-def _extract_label_if_any(text: str) -> Optional[str]:
-    # Extract label only if FULL_RE matches exactly. Returns normalized label or None
-    m = FULL_RE.match(text or "")
-    if not m:
-        return None
-    return (m.group("label") or "").lower()
-
-def accuracy_reward(completions, **kwargs):
-    # Strict accuracy: only award accuracy if FULL_RE matches exactly
-    # Returns 1.0 if predicted label equals gold, else 0.0
-    solutions = kwargs["solution"]
-    rewards = []
-    for completion, solution in zip(completions, solutions):
-        text = completion[0].get("content") or ""
-        pred = _extract_label_if_any(text)
-        if pred is None:
-            rewards.append(0.0)
-            continue
-        gold = (solution or "").lower()
-        rewards.append(1.0 if pred == gold else 0.0)
-    return rewards
-
-"""
 
 def _extract_label_if_any(text: str) -> Optional[str]:
     # Extract label only if FULL_RE matches exactly
