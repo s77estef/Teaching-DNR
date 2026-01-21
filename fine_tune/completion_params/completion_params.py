@@ -28,12 +28,12 @@ GENERATION_CONFIG: Dict[str, Any] = {
     "max_prompt_length": 256,
     "max_completion_length": 512,
     "num_generations": 4,
-    "temperature": [0.7],
-    #"top_p": [0.6],
-    ##"top_k": [100],
-    #"min_p": [0.1],
-    #"repetition_penalty": 1.05,
-    #"do_sample": True,
+    "temperature": [1.1, 1.2, 1.3],
+    "top_p": [0.9, 0.8],
+    "top_k": [50, 100],
+    "min_p": [0.1],
+    "repetition_penalty": 1.05,
+    "do_sample": True,
     "batch_size": 4,
 }
 
@@ -85,18 +85,19 @@ FULL_RE = re.compile(
     re.DOTALL | re.IGNORECASE,
 )
 
+"""
+
 # Strict tags: no whitespace inside angle brackets
 OPEN_THINK_RE = re.compile(r"<think>", re.IGNORECASE)
 CLOSE_THINK_RE = re.compile(r"</think>", re.IGNORECASE)
 OPEN_ANSWER_RE = re.compile(r"<answer>", re.IGNORECASE)
 CLOSE_ANSWER_RE = re.compile(r"</answer>", re.IGNORECASE)
 
-# (Optional but recommended) forbid any tag except exact think/answer open/close
+
 FORBIDDEN_RE = re.compile(
     r"<(?!/?(?:think|answer)>)[^>]+>",
     re.IGNORECASE,
 )
-
 
 def format_reward(completions, **_):
     rewards = []
@@ -141,7 +142,32 @@ def format_reward(completions, **_):
         rewards.append(1.0 if score > 1.0 else score)
 
     return rewards
+"""
 
+def _extract_label_if_any(text: str) -> Optional[str]:
+    # Extract label only if FULL_RE matches exactly
+    m = FULL_RE.match(text or "")
+    if not m:
+        return None
+    return (m.group("label") or "").lower()
+
+def accuracy_reward(completions, **kwargs):
+    # Strict accuracy reward: FULL_RE must match exactly, label must be extractable, label must equal gold
+    solutions = kwargs["solution"]
+    rewards = []
+
+    for completion, solution in zip(completions, solutions):
+        text = completion_to_text(completion).strip()
+        pred = _extract_label_if_any(text)
+
+        if pred is None:
+            rewards.append(0.0)
+            continue
+
+        gold = (solution or "").lower()
+        rewards.append(1.0 if pred == gold else 0.0)
+
+    return rewards
 
 # --------------------------------------------------------- LOGGING
 
@@ -441,7 +467,7 @@ def run_generation() -> None:
     for generation_config in _iter_generation_configs(GENERATION_CONFIG):
         start_time = time.time()
         completions = generate_completions(model, tokenizer, prompts, generation_config)
-        rewards = format_reward(completions)
+        rewards = accuracy_reward(completions)
         group_size = int(generation_config.get("num_generations", 1))
         reward_mads = []
         if group_size > 0:

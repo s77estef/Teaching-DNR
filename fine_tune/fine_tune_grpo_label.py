@@ -32,7 +32,7 @@ from fine_tune.shared import SYSTEM_PROMPT, SYSTEM_PROMPT_FS, load_wildguard_tra
 
 # ---- config settings ----
 
-TRAIN_SAMPLES = 100
+TRAIN_SAMPLES = 20000
 #MODEL_ID = "Qwen/Qwen2-0.5B-Instruct"
 #MODEL_ID = "Qwen/Qwen3-4B-Thinking-2507"
 #MODEL_ID = "Qwen/Qwen3-4B-Instruct-2507"
@@ -97,7 +97,7 @@ GRPO_TRAINING_CONFIG_B = {
     "report_to": ["wandb"],
     "logging_steps": 10,
     "save_strategy": "steps",
-    "save_steps": 1,
+    "save_steps": 25,
 }
 GRPO_TRAINING_CONFIG = GRPO_TRAINING_CONFIG_B
 
@@ -167,8 +167,8 @@ def format_reward(completions, **_):
         rewards.append(1.0 if FULL_RE.match(text) else 0.0)
     return rewards
 
-"""
 
+"""
 
 def _extract_label_if_any(text: str) -> Optional[str]:
     # Extract label only if FULL_RE matches exactly
@@ -178,12 +178,7 @@ def _extract_label_if_any(text: str) -> Optional[str]:
     return (m.group("label") or "").lower()
 
 def accuracy_reward(completions, **kwargs):
-    """
-    Strict accuracy reward:
-    - FULL_RE must match exactly
-    - label must be extractable
-    - label must equal gold
-    """
+    # Strict accuracy reward: FULL_RE must match exactly, label must be extractable, label must equal gold
     solutions = kwargs["solution"]
     rewards = []
 
@@ -199,6 +194,7 @@ def accuracy_reward(completions, **kwargs):
         rewards.append(1.0 if pred == gold else 0.0)
 
     return rewards
+
 
 
 # --------------------------------------------------------- REWARDS
@@ -437,7 +433,7 @@ def run_trainer(
     _write_grpo_config(config_for_log, training_args.output_dir)
     _write_reward_source(training_args.output_dir)
 
-    reward_funcs = [format_reward]
+    reward_funcs = [accuracy_reward]
     save_steps = training_args.save_steps or GRPO_TRAINING_CONFIG.get("save_steps")
     log_state = _RewardLogState(
         num_funcs=len(reward_funcs),
