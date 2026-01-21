@@ -33,10 +33,10 @@ except ImportError:
 
 MODEL_ID = "Qwen/Qwen3-4B"
 # max non-Null: 1699
-PRINT_SAMPLES = 10
-TEST_SAMPLES = 10
+PRINT_SAMPLES = 100
+TEST_SAMPLES = 100
 
-# ADAPTER_PATH = None
+ADAPTER_PATH = None
 #ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-test_20251205_164937_195803_merged/checkpoint-3000"
 #ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-test_20251206_094610/checkpoint-625"
 #ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-test_20251206_231028/checkpoint-625"
@@ -45,16 +45,16 @@ TEST_SAMPLES = 10
 #ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-SFT-sweep_youthful-terrain-41/checkpoint-157"
 #ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-SFT-sweep_ethereal-sweep-5/checkpoint-157"
 #ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-test_20251218_180547/checkpoint-625"
-ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-test_20260106_180254/checkpoint-225"
-ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-test_20260107_132438/checkpoint-175"
-ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-test_20260108_055324/checkpoint-100"
+#ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-test_20260106_180254/checkpoint-225"
+#ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-test_20260107_132438/checkpoint-175"
+#ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-test_20260108_055324/checkpoint-100"
 
 DATASET_NAME = "allenai/wildguardmix"
 DATASET_CONFIG = "wildguardtest"
 DATASET_SPLIT = "test"
 REQUIRED_COLUMNS = {"prompt", "prompt_harm_label"}
 GENERATION_CONFIG = {
-    "max_new_tokens": 1024,
+    "max_new_tokens": 512,
     "temperature": 0.7,
 }
 

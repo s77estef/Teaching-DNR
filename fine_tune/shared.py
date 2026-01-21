@@ -73,6 +73,49 @@ def load_wildguard_train(
     train = train.select(range(sample_count))
     return train
 
+def load_wildguard_train_rendered(
+    *,
+    seed: int = 42,
+    num_samples: int = 86759,
+    max_prompt_tokens: int | None = None,
+    tokenizer_name: str = "Qwen/Qwen3-4B",
+    system_prompt: str,
+) -> Dataset:
+    ds = load_dataset(
+        "allenai/wildguardmix",
+        "wildguardtrain",
+        split="train",
+        columns=["prompt", "prompt_harm_label"],
+    ).shuffle(seed=seed)
+
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, use_fast=True)
+    tokenizer.pad_token = tokenizer.eos_token
+
+    def render(ex):
+        msgs = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": ex["prompt"]},
+        ]
+        rendered = tokenizer.apply_chat_template(
+            msgs, tokenize=False, add_generation_prompt=True
+        )
+        return {
+            "prompt": rendered,
+            "solution": str(ex["prompt_harm_label"]).lower(),
+        }
+
+    ds = ds.map(render, remove_columns=ds.column_names)
+
+    if max_prompt_tokens is not None:
+        def within_limit(ex):
+            ids = tokenizer(ex["prompt"], add_special_tokens=False)["input_ids"]
+            return len(ids) <= max_prompt_tokens
+        ds = ds.filter(within_limit)
+
+    ds = ds.select(range(min(num_samples, len(ds))))
+    return ds
+
+
 # features: ['prompt', 'adversarial', 'response', 'prompt_harm_label', 'response_refusal_label', 'response_harm_label', 'subcategory']
 # num_rows test: 1725
 def load_wildguard_test(seed: int = 42, num_samples: int = 1699) -> Dataset:
