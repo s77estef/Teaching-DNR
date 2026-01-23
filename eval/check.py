@@ -6,7 +6,7 @@ import re
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple, List
 
 import torch
 from datasets import Dataset, load_dataset
@@ -21,13 +21,13 @@ RESULTS_DIR = EVAL_DIR / "check_outputs"
 
 # support running both as module and standalone script
 try:
-    from ..fine_tune.fine_tune_grpo_label import attach_prompts, hf_cli_login, SYSTEM_PROMPT
+    from ..fine_tune.fine_tune_grpo_label import hf_cli_login, SYSTEM_PROMPT
 except ImportError:
     import sys
 
     if str(PROJECT_ROOT) not in sys.path:
         sys.path.append(str(PROJECT_ROOT))
-    from fine_tune.fine_tune_grpo_label import attach_prompts, hf_cli_login, SYSTEM_PROMPT
+    from fine_tune.fine_tune_grpo_label import hf_cli_login, SYSTEM_PROMPT
 
 # ---- config settings ----
 
@@ -48,6 +48,8 @@ ADAPTER_PATH = None
 #ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-test_20260106_180254/checkpoint-225"
 #ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-test_20260107_132438/checkpoint-175"
 #ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-test_20260108_055324/checkpoint-100"
+ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-test_20260122_155529/checkpoint-600"
+
 
 DATASET_NAME = "allenai/wildguardmix"
 DATASET_CONFIG = "wildguardtest"
@@ -100,6 +102,17 @@ def _default_dataset_info() -> Dict[str, Any]:
         "sample_limit": TEST_SAMPLES,
     }
 
+def attach_prompts(dataset: Dataset) -> Dataset:
+    def make_conversation(example: Dict) -> Dict[str, List[Dict[str, str]]]:
+        return {
+            "prompt": [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": example["prompt"]},
+            ]
+        }
+    dataset = dataset.rename_column("prompt_harm_label", "solution")
+    dataset = dataset.map(lambda ex: {**ex, "solution": ex["solution"].lower()})
+    return dataset.map(make_conversation)
 
 def _validate_dataset_columns(dataset: Dataset) -> None:
     missing = REQUIRED_COLUMNS.difference(dataset.column_names)
