@@ -1,4 +1,6 @@
 import os
+import re
+from typing import Dict, List, Optional, Pattern, Tuple
 import wandb
 
 from datasets import Dataset, load_dataset
@@ -45,6 +47,103 @@ SYSTEM_PROMPT_FS = (
     "<answer>harmful</answer>\n\n"
     "Now classify the next user question using the same format."
 )
+
+_LABEL_RE_CACHE: Dict[Tuple[str, bool], Pattern] = {}
+_FORBIDDEN_RE_CACHE: Dict[Tuple[str, ...], Pattern] = {}
+
+
+def get_label_regex(reasoning_tag: str = "think", capture_reasoning: bool = False) -> Pattern:
+    key = (reasoning_tag, capture_reasoning)
+    cached = _LABEL_RE_CACHE.get(key)
+    if cached is not None:
+        return cached
+    if capture_reasoning:
+        pattern = (
+            rf"^\s*<{reasoning_tag}>(?P<reasoning>.*?)</{reasoning_tag}>\s*"
+            r"<answer>\s*(?P<label>harmful|unharmful)\s*</answer>\s*$"
+        )
+    else:
+        pattern = (
+            rf"^\s*<{reasoning_tag}>.*?</{reasoning_tag}>\s*"
+            r"<answer>\s*(?P<label>harmful|unharmful)\s*</answer>\s*$"
+        )
+    compiled = re.compile(pattern, re.DOTALL | re.IGNORECASE)
+    _LABEL_RE_CACHE[key] = compiled
+    return compiled
+
+
+def _get_forbidden_in_reasoning_regex(tags: Tuple[str, ...]) -> Pattern:
+    cached = _FORBIDDEN_RE_CACHE.get(tags)
+    if cached is not None:
+        return cached
+    pattern = r"</?\s*(" + "|".join(re.escape(tag) for tag in tags) + r")\s*>"
+    compiled = re.compile(pattern, re.IGNORECASE)
+    _FORBIDDEN_RE_CACHE[tags] = compiled
+    return compiled
+
+
+def extract_label_if_any(text: str, reasoning_tag: str = "think") -> Optional[str]:
+    m = get_label_regex(reasoning_tag=reasoning_tag, capture_reasoning=False).match(text or "")
+    if not m:
+        return None
+    return (m.group("label") or "").lower()
+
+
+def validate_and_extract_label(
+    text: str,
+    *,
+    reasoning_tag: str = "think",
+    forbid_nested_tags: bool = True,
+    forbidden_tags: Tuple[str, ...] = ("answer", "think", "reasoning"),
+) -> Tuple[bool, Optional[str]]:
+    """
+    Returns (format_ok, label) where label is normalized to 'harmful'/'unharmful' if present.
+
+    Format requirements:
+      - Entire output is exactly: <{reasoning_tag}>...</{reasoning_tag}><answer>harmful|unharmful</answer>
+        allowing surrounding whitespace only.
+      - When forbid_nested_tags is True, no nested/embedded tags from forbidden_tags inside reasoning.
+    """
+    m = get_label_regex(reasoning_tag=reasoning_tag, capture_reasoning=True).match(text or "")
+    if not m:
+        return False, None
+
+    if forbid_nested_tags:
+        reasoning_text = m.group("reasoning") or ""
+        forbidden_re = _get_forbidden_in_reasoning_regex(forbidden_tags)
+        if forbidden_re.search(reasoning_text):
+            return False, None
+
+    label = (m.group("label") or "").lower()
+    return True, label
+
+
+def build_prompt_messages(system_prompt: str, user_prompt: str) -> List[Dict[str, str]]:
+    return [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt},
+    ]
+
+
+def attach_prompts_for_eval(
+    dataset: Dataset,
+    *,
+    system_prompt: str,
+    prompt_column: str = "prompt",
+    label_column: str = "prompt_harm_label",
+) -> Dataset:
+    dataset = dataset.rename_column(label_column, "solution")
+    dataset = dataset.map(lambda ex: {"solution": str(ex["solution"]).lower()})
+    return dataset.map(
+        lambda ex: {"prompt": build_prompt_messages(system_prompt, ex[prompt_column])}
+    )
+
+
+def validate_dataset_columns(dataset: Dataset, required_columns: set[str]) -> None:
+    missing = required_columns.difference(dataset.column_names)
+    if missing:
+        cols = ", ".join(sorted(missing))
+        raise ValueError(f"Dataset missing required columns: {cols}")
 
 
 def hf_cli_login() -> None:

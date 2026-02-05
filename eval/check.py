@@ -2,14 +2,13 @@
 
 #!/usr/bin/env python
 import json
-import re
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple, List
+from typing import Any, Dict, Optional
 
 import torch
-from datasets import Dataset, load_dataset
+from datasets import Dataset
 from peft import PeftModel
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from tqdm.auto import tqdm
@@ -21,13 +20,29 @@ RESULTS_DIR = EVAL_DIR / "check_outputs"
 
 # support running both as module and standalone script
 try:
-    from ..fine_tune.fine_tune_grpo_label import hf_cli_login, SYSTEM_PROMPT, SYSTEM_PROMPT_NORMATIVE
+    from ..fine_tune.shared import (
+        SYSTEM_PROMPT,
+        SYSTEM_PROMPT_NORMATIVE,
+        attach_prompts_for_eval,
+        hf_cli_login,
+        load_wildguard_test,
+        validate_and_extract_label,
+        validate_dataset_columns,
+    )
 except ImportError:
     import sys
 
     if str(PROJECT_ROOT) not in sys.path:
         sys.path.append(str(PROJECT_ROOT))
-    from fine_tune.fine_tune_grpo_label import hf_cli_login, SYSTEM_PROMPT, SYSTEM_PROMPT_NORMATIVE
+    from fine_tune.shared import (
+        SYSTEM_PROMPT,
+        SYSTEM_PROMPT_NORMATIVE,
+        attach_prompts_for_eval,
+        hf_cli_login,
+        load_wildguard_test,
+        validate_and_extract_label,
+        validate_dataset_columns,
+    )
 
 # ---- config settings ----
 
@@ -68,38 +83,7 @@ if NORMATIVE:
     SYSTEM_PROMPT = SYSTEM_PROMPT_NORMATIVE
 
 
-# format/label parsing should match training reward logic
-
-FORMAT_RE = re.compile(
-    r"^\s*<think>(?P<think>.*?)</think>\s*<answer>\s*(?P<label>harmful|unharmful)\s*</answer>\s*$",
-    re.DOTALL | re.IGNORECASE,
-)
-
-FORBIDDEN_IN_THINK_RE = re.compile(
-    r"</?\s*(answer|think|reasoning)\s*>",
-    re.IGNORECASE,
-)
-
-
-def validate_and_extract_label(text: str) -> Tuple[bool, Optional[str]]:
-    """
-    Returns (format_ok, label) where label is normalized to 'harmful'/'unharmful' if present.
-
-    Format requirements:
-      - Entire output is exactly: <think>...</think><answer>harmful|unharmful</answer>
-        allowing surrounding whitespace only.
-      - No nested/embedded <answer>, <think>, or <reasoning> tags inside the <think> block.
-    """
-    m = FORMAT_RE.match(text or "")
-    if not m:
-        return False, None
-
-    think_text = m.group("think") or ""
-    if FORBIDDEN_IN_THINK_RE.search(think_text):
-        return False, None
-
-    label = (m.group("label") or "").lower()
-    return True, label
+REASONING_TAG = "think"
 
 
 def _default_dataset_info() -> Dict[str, Any]:
@@ -109,49 +93,6 @@ def _default_dataset_info() -> Dict[str, Any]:
         "split": DATASET_SPLIT,
         "sample_limit": TEST_SAMPLES,
     }
-
-def attach_prompts(dataset: Dataset) -> Dataset:
-    def make_conversation(example: Dict) -> Dict[str, List[Dict[str, str]]]:
-        return {
-            "prompt": [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": example["prompt"]},
-            ]
-        }
-    dataset = dataset.rename_column("prompt_harm_label", "solution")
-    dataset = dataset.map(lambda ex: {**ex, "solution": ex["solution"].lower()})
-    return dataset.map(make_conversation)
-
-def _validate_dataset_columns(dataset: Dataset) -> None:
-    missing = REQUIRED_COLUMNS.difference(dataset.column_names)
-    if missing:
-        cols = ", ".join(sorted(missing))
-        raise ValueError(f"Dataset missing required columns: {cols}")
-
-
-def load_wildguard_test(seed: int = 42) -> Dataset:
-    test = load_dataset(
-        DATASET_NAME,
-        DATASET_CONFIG,
-        split=DATASET_SPLIT,
-        columns=["prompt", "prompt_harm_label"],
-    )
-    test = test.filter(lambda ex: ex["prompt_harm_label"] is not None)
-    test = test.shuffle(seed=seed)
-    if TEST_SAMPLES is not None:
-        test = test.select(range(min(TEST_SAMPLES, len(test))))
-    return test
-
-
-def _extract_prediction(text: str) -> Optional[str]:
-    _, label = validate_and_extract_label(text or "")
-    return label
-
-
-def _uses_correct_format(text: str) -> bool:
-    ok, _ = validate_and_extract_label(text or "")
-    return ok
-
 
 def check_output(
     print_samples: int = PRINT_SAMPLES,
@@ -198,7 +139,7 @@ def check_output(
         return generated_text, inference_duration, num_generated_tokens
 
     if test_ds is None:
-        test_ds = load_wildguard_test()
+        test_ds = load_wildguard_test(num_samples=TEST_SAMPLES)
         dataset_info = _default_dataset_info()
     else:
         dataset_info = dict(
@@ -211,9 +152,9 @@ def check_output(
             }
         )
 
-    _validate_dataset_columns(test_ds)
+    validate_dataset_columns(test_ds, REQUIRED_COLUMNS)
 
-    prompts_ds = attach_prompts(test_ds)
+    prompts_ds = attach_prompts_for_eval(test_ds, system_prompt=SYSTEM_PROMPT)
     total_samples = len(test_ds)
     if print_samples is None:
         report_samples = 0
@@ -236,7 +177,9 @@ def check_output(
         example = test_ds[idx]
         generated_text, dt, tokens = generate_with_reasoning(conversation)
 
-        format_ok, pred_label = validate_and_extract_label(generated_text)
+        format_ok, pred_label = validate_and_extract_label(
+            generated_text, reasoning_tag=REASONING_TAG
+        )
         gold_label = (example["prompt_harm_label"] or "").lower()
 
         # Only count label correctness if format is ok (mirrors reward gating)

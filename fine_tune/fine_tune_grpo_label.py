@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 import json
 import os
-import re
 import sys
 import time
 from datetime import datetime
@@ -28,7 +27,15 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.append(str(PROJECT_ROOT))
 
-from fine_tune.shared import SYSTEM_PROMPT, SYSTEM_PROMPT_FS, SYSTEM_PROMPT_NORMATIVE, load_wildguard_train_rendered, hf_cli_login, wandb_cli_login
+from fine_tune.shared import (
+    SYSTEM_PROMPT,
+    SYSTEM_PROMPT_FS,
+    SYSTEM_PROMPT_NORMATIVE,
+    extract_label_if_any,
+    load_wildguard_train_rendered,
+    hf_cli_login,
+    wandb_cli_login,
+)
 
 # ---- config settings ----
 
@@ -162,15 +169,7 @@ def completion_to_text(completion) -> str:
     return ""
 
 
-FULL_RE = re.compile(
-    r"^\s*<think>.*?</think>\s*<answer>\s*(?P<label>harmful|unharmful)\s*</answer>\s*$",
-    re.DOTALL | re.IGNORECASE,
-)
-
-FULL_RE_N = re.compile(
-    r"^\s*<normative>.*?</normative>\s*<answer>\s*(?P<label>harmful|unharmful)\s*</answer>\s*$",
-    re.DOTALL | re.IGNORECASE,
-)
+REASONING_TAG = "think"
 
 #if NORMATIVE:
 #    FULL_RE = FULL_RE_N
@@ -187,13 +186,6 @@ def format_reward(completions, **_):
 
 """
 
-def _extract_label_if_any(text: str) -> Optional[str]:
-    # Extract label only if FULL_RE matches exactly
-    m = FULL_RE.match(text or "")
-    if not m:
-        return None
-    return (m.group("label") or "").lower()
-
 def accuracy_reward(completions, **kwargs):
     # Strict accuracy reward: FULL_RE must match exactly, label must be extractable, label must equal gold
     solutions = kwargs["solution"]
@@ -201,7 +193,7 @@ def accuracy_reward(completions, **kwargs):
 
     for completion, solution in zip(completions, solutions):
         text = completion_to_text(completion).strip()
-        pred = _extract_label_if_any(text)
+        pred = extract_label_if_any(text, reasoning_tag=REASONING_TAG)
 
         if pred is None:
             rewards.append(0.0)
@@ -276,14 +268,6 @@ def _normalize_list(value: Any, batch_size: int) -> List[Any]:
     if isinstance(value, (list, tuple)) and len(value) == batch_size:
         return list(value)
     return [value] * batch_size
-
-
-def _completion_to_text(completion: Any) -> str:
-    if isinstance(completion, list) and completion:
-        first = completion[0]
-        if isinstance(first, dict) and "content" in first:
-            return str(first.get("content") or "")
-    return str(completion)
 
 
 def _extract_system_user(prompt_val: Any) -> Tuple[str | None, str | None]:
@@ -366,7 +350,7 @@ def _write_reward_batch_log(step: int, output_dir: str, payload: Dict[str, Any])
             solution_val = solutions[start_idx]
             _, user_prompt = _extract_system_user(prompt_val)
             completion_group = [
-                _completion_to_text(item) for item in completions[start_idx:end_idx]
+                completion_to_text(item) for item in completions[start_idx:end_idx]
             ]
             reward_totals = []
             for local_idx in range(start_idx, end_idx):
