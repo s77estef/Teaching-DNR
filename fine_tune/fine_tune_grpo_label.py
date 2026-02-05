@@ -28,16 +28,20 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.append(str(PROJECT_ROOT))
 
-from fine_tune.shared import SYSTEM_PROMPT, SYSTEM_PROMPT_FS, load_wildguard_train_rendered, hf_cli_login, wandb_cli_login
+from fine_tune.shared import SYSTEM_PROMPT, SYSTEM_PROMPT_FS, SYSTEM_PROMPT_NORMATIVE, load_wildguard_train_rendered, hf_cli_login, wandb_cli_login
 
 # ---- config settings ----
 
-TRAIN_SAMPLES = 20000
+TRAIN_SAMPLES = 10000
 #MODEL_ID = "Qwen/Qwen2-0.5B-Instruct"
 #MODEL_ID = "Qwen/Qwen3-4B-Thinking-2507"
 #MODEL_ID = "Qwen/Qwen3-4B-Instruct-2507"
 MODEL_ID = "Qwen/Qwen3-4B"
 DEBUG = False
+NORMATIVE = True # changes system prompt and rewards for normative reasoning
+
+if NORMATIVE:
+    SYSTEM_PROMPT = SYSTEM_PROMPT_NORMATIVE
 
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 model_name = MODEL_ID.split("/", 1)[-1]
@@ -53,17 +57,22 @@ GRPO_TRAINING_CONFIG_C = {
     "output_dir": OUTPUT_DIR,
     "learning_rate": 1e-5,
     "remove_unused_columns": False,
-    "per_device_train_batch_size": 8,
+    "per_device_train_batch_size": 2,
     "gradient_accumulation_steps": 16,
     "num_train_epochs": 1,
     "bf16": True,
-    "max_completion_length": 256,
+    "max_completion_length": 512,
     "num_generations": 4,
-    "do_sample": True,
-    "temperature": 1.0,
-    "top_p": 0.95,
-    "top_k": 50,
-    "max_prompt_length": 256,
+    # model-specific defaults: {'temperature': 0.6, 'top_p': 0.95}
+    #"temperature": 1.1, # 2.0 is way too much
+    #"top_p": 0.9, # keep smallest set of tokens whose cumulative probability ≥ p
+    #"top_k": 50, # (default None) keep k most probable tokens
+    #"min_p": 0.05, # discard any token whose individual probability < p
+    #"repetition_penalty": 1.05, # penalize repeated tags or loops
+    #"generation_kwargs": {
+    #    "do_sample": True,
+    #},
+    "max_prompt_length": 337, # 256 + 81 because the normative system prompt is 81 tokens longer
     "report_to": ["wandb"],
     "logging_steps": 10,
     "save_strategy": "steps",
@@ -99,7 +108,7 @@ GRPO_TRAINING_CONFIG_B = {
     "save_strategy": "steps",
     "save_steps": 25,
 }
-GRPO_TRAINING_CONFIG = GRPO_TRAINING_CONFIG_B
+GRPO_TRAINING_CONFIG = GRPO_TRAINING_CONFIG_C
 
 LORA_CONFIG: Dict[str, Any] = {
     "task_type": "CAUSAL_LM",
@@ -122,7 +131,7 @@ LORA_CONFIG: Dict[str, Any] = {
 
 def load_lora_model(lora_overrides: Dict[str, Any] | None = None) -> torch.nn.Module:
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    dtype = torch.float16 if device == "cuda" else torch.float32
+    dtype = torch.bfloat16 if device == "cuda" else torch.float32
     base = AutoModelForCausalLM.from_pretrained(
         MODEL_ID,
         torch_dtype=dtype,
@@ -157,6 +166,14 @@ FULL_RE = re.compile(
     r"^\s*<think>.*?</think>\s*<answer>\s*(?P<label>harmful|unharmful)\s*</answer>\s*$",
     re.DOTALL | re.IGNORECASE,
 )
+
+FULL_RE_N = re.compile(
+    r"^\s*<normative>.*?</normative>\s*<answer>\s*(?P<label>harmful|unharmful)\s*</answer>\s*$",
+    re.DOTALL | re.IGNORECASE,
+)
+
+#if NORMATIVE:
+#    FULL_RE = FULL_RE_N
 
 """
 

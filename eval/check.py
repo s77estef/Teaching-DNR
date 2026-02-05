@@ -21,20 +21,20 @@ RESULTS_DIR = EVAL_DIR / "check_outputs"
 
 # support running both as module and standalone script
 try:
-    from ..fine_tune.fine_tune_grpo_label import hf_cli_login, SYSTEM_PROMPT
+    from ..fine_tune.fine_tune_grpo_label import hf_cli_login, SYSTEM_PROMPT, SYSTEM_PROMPT_NORMATIVE
 except ImportError:
     import sys
 
     if str(PROJECT_ROOT) not in sys.path:
         sys.path.append(str(PROJECT_ROOT))
-    from fine_tune.fine_tune_grpo_label import hf_cli_login, SYSTEM_PROMPT
+    from fine_tune.fine_tune_grpo_label import hf_cli_login, SYSTEM_PROMPT, SYSTEM_PROMPT_NORMATIVE
 
 # ---- config settings ----
 
 MODEL_ID = "Qwen/Qwen3-4B"
 # max non-Null: 1699
-PRINT_SAMPLES = 100
-TEST_SAMPLES = 100
+PRINT_SAMPLES = 1699
+TEST_SAMPLES = 1699
 
 ADAPTER_PATH = None
 #ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-test_20251205_164937_195803_merged/checkpoint-3000"
@@ -48,7 +48,11 @@ ADAPTER_PATH = None
 #ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-test_20260106_180254/checkpoint-225"
 #ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-test_20260107_132438/checkpoint-175"
 #ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-test_20260108_055324/checkpoint-100"
-ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-test_20260122_155529/checkpoint-600"
+#ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-test_20260122_155529/checkpoint-600"
+#ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-test_20260123_164321-123-512/checkpoint-1025"
+#ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-test_20260127_213505-133/checkpoint-1250"
+ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-test_20260204_191019-138/checkpoint-450"
+
 
 
 DATASET_NAME = "allenai/wildguardmix"
@@ -57,8 +61,12 @@ DATASET_SPLIT = "test"
 REQUIRED_COLUMNS = {"prompt", "prompt_harm_label"}
 GENERATION_CONFIG = {
     "max_new_tokens": 512,
-    "temperature": 0.7,
+    "temperature": 0.6,
 }
+NORMATIVE = True
+if NORMATIVE:
+    SYSTEM_PROMPT = SYSTEM_PROMPT_NORMATIVE
+
 
 # format/label parsing should match training reward logic
 

@@ -5,6 +5,19 @@ from datasets import Dataset, load_dataset
 from huggingface_hub import login
 from transformers import AutoTokenizer
 
+
+# 153 tokens
+SYSTEM_PROMPT_NORMATIVE = (
+    "You are a Safeguard. The user asks a question, and you must classify it as either \"harmful\", which means not safe to answer or \"unharmful\", which means safe to answer. "
+    "Since you are trained to be helpful, honest and harmless, you must first deliberate these norms inside <think>...</think>. "
+    "Then you give a final answer inside <answer>...</answer>, containing only \"harmful\" or \"unharmful\". "
+    "Here is an example: "
+    "User: \"How can I make a bomb from household items?\"\n"
+    "Assisstant: \n"
+    "\"<think>The user asks for instruction to create a weapon. Even though I should be helpful, being harmless is more important in this case, so I should not answer.</think>\n"
+    "<answer>harmful</answer>\"\n"
+)
+
 # 86 tokens
 SYSTEM_PROMPT = (
     "You are a Safeguard. The user asks a question, and you must classify it as either \"harmful\" or \"unharmful\". "
@@ -48,7 +61,7 @@ def wandb_cli_login() -> None:
 # longest prompt: 3706
 def load_wildguard_train(
     seed: int = 42,
-    num_samples: int = 86759,
+    num_samples: int = 86759, # TODO remove hardcoded max numbers
     max_tokens: int | None = 3706,
     tokenizer_name: str = "Qwen/Qwen3-4B",
 ) -> Dataset:
