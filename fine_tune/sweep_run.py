@@ -24,7 +24,8 @@ import torch
 from tqdm.auto import tqdm
 
 from fine_tune import fine_tune_sft_label as sft
-from fine_tune.shared import load_wildguard_train, load_wildguard_test
+from eval.testdata import load_wildguardmix_test
+from fine_tune.shared import load_wildguard_train
 
 
 sft.TRAIN_SAMPLES = 20000
@@ -69,7 +70,7 @@ def _extract_prediction(text: str) -> str | None:
 
 def evaluate_accuracy(model, tokenizer, seed: int = 123):
     model.eval()
-    test_ds = load_wildguard_test(seed=seed)
+    test_ds, _ = load_wildguardmix_test(seed=seed)
     sample_count = len(test_ds)
     prompts_ds = sft.attach_prompts(test_ds)
     device = next(model.parameters()).device

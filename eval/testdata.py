@@ -1,78 +1,104 @@
-"""
-Extracts the 313 adversarial prompts from strongreject and lets a given model classify them.
-Perfect classification would be all adversarial (label true).
-NOTE: There exist two evaluators that evaluate an answer on its harmfulness. However, since we only train a classifier, this is not applicable.
-"""
+from __future__ import annotations
 
-import importlib
-import subprocess
-import sys
-from pathlib import Path
+from typing import Any, Dict, Tuple
 
 from datasets import Dataset, load_dataset
 
-try:
-    from .check import check_output, hf_cli_login
-except ImportError:
-    PROJECT_ROOT = Path(__file__).resolve().parents[2]
-    if str(PROJECT_ROOT) not in sys.path:
-        sys.path.append(str(PROJECT_ROOT))
-    from eval.check import check_output, hf_cli_login
+REQUIRED_COLUMNS = {"prompt", "prompt_harm_label"}
+STRONGREJECT_DATA_FILE = (
+    "https://raw.githubusercontent.com/alexandrasouly/strongreject/main/"
+    "strongreject_dataset/strongreject_dataset.csv"
+)
 
 
-DATA_FILE = "https://raw.githubusercontent.com/alexandrasouly/strongreject/main/strongreject_dataset/strongreject_dataset.csv"
-DEFAULT_PRINT_SAMPLES = 313 # is full datset
-
-
-def ensure_strong_reject() -> None:
-    """Install strong_reject from GitHub if it's not already available."""
-    try:
-        importlib.import_module("strong_reject")
-    except ImportError:
-        subprocess.check_call([
-            sys.executable,
-            "-m",
-            "pip",
-            "install",
-            "git+https://github.com/dsbowen/strong_reject@main",
-        ])
-
-
-def load_strongreject_prompts() -> Dataset:
-    """Return the StrongReject prompts as [prompt, adversarial] pairs."""
-    dataset = load_dataset("csv", data_files=DATA_FILE, split="train")
-    dataset = dataset.rename_column("forbidden_prompt", "prompt")
-    dataset = dataset.add_column("adversarial", [True] * len(dataset))
-    drop_cols = [col for col in dataset.column_names if col not in {"prompt", "adversarial"}]
-    if drop_cols:
-        dataset = dataset.remove_columns(drop_cols)
-    return dataset
-
-
-def run_check(print_samples: int | None = DEFAULT_PRINT_SAMPLES, adapter_path: str | None = None):
-    dataset = load_strongreject_prompts()
-    total = len(dataset)
-    samples_to_print = total if print_samples is None else min(print_samples, total)
-    dataset_info = {
-        "name": "strongreject",
-        "config": "csv",
-        "split": "train",
-        "sample_limit": None,
+def _dataset_info(
+    *,
+    name: str,
+    config: str | None,
+    split: str | None,
+    sample_limit: int | None,
+    **extra: Any,
+) -> Dict[str, Any]:
+    info: Dict[str, Any] = {
+        "name": name,
+        "config": config,
+        "split": split,
+        "sample_limit": sample_limit,
     }
-    return check_output(
-        print_samples=samples_to_print,
-        adapter_path=adapter_path,
-        test_ds=dataset,
-        dataset_info=dataset_info,
+    info.update(extra)
+    return info
+
+
+def _select_num_samples(ds: Dataset, num_samples: int | None) -> Dataset:
+    if num_samples is None:
+        return ds
+    return ds.select(range(min(num_samples, len(ds))))
+
+
+def load_wildguardmix_test(
+    *,
+    num_samples: int = 1699,
+    seed: int = 42,
+) -> Tuple[Dataset, Dict[str, Any]]:
+    ds = load_dataset(
+        "allenai/wildguardmix",
+        "wildguardtest",
+        split="test",
+        columns=["prompt", "prompt_harm_label"],
     )
+    ds = ds.filter(lambda ex: ex["prompt_harm_label"] is not None)
+    ds = ds.shuffle(seed=seed)
+    ds = _select_num_samples(ds, num_samples)
+    info = _dataset_info(
+        name="allenai/wildguardmix",
+        config="wildguardtest",
+        split="test",
+        sample_limit=num_samples,
+    )
+    return ds, info
 
 
-def main() -> None:
-    ensure_strong_reject()
-    hf_cli_login()
-    result_path = run_check(adapter_path="fine_tune/trained_experiments/Qwen3-4B-SFT-sweep_ancient-sweep-19/checkpoint-157")
-    print(f"StrongReject evaluation saved to {result_path}")
+def load_strongreject_test(
+    *,
+    num_samples: int = 313,
+    seed: int = 42,
+) -> Tuple[Dataset, Dict[str, Any]]:
+    ds = load_dataset("csv", data_files=STRONGREJECT_DATA_FILE, split="train")
+    ds = ds.rename_column("forbidden_prompt", "prompt")
+    ds = ds.add_column("prompt_harm_label", ["harmful"] * len(ds))
+    drop_cols = [col for col in ds.column_names if col not in REQUIRED_COLUMNS]
+    if drop_cols:
+        ds = ds.remove_columns(drop_cols)
+    ds = ds.shuffle(seed=seed)
+    ds = _select_num_samples(ds, num_samples)
+    info = _dataset_info(
+        name="strongreject",
+        config="csv",
+        split="train",
+        sample_limit=num_samples,
+        source=STRONGREJECT_DATA_FILE,
+        expected_label="harmful",
+    )
+    return ds, info
 
 
-if __name__ == "__main__":
-    main()
+REGISTRY = {
+    "wildguardmix_test": load_wildguardmix_test,
+    "strongreject_test": load_strongreject_test,
+}
+
+
+def get_test_dataset(
+    key: str,
+    *,
+    num_samples: int,
+    seed: int = 42,
+) -> Tuple[Dataset, Dict[str, Any]]:
+    try:
+        loader = REGISTRY[key]
+    except KeyError as exc:
+        available = ", ".join(sorted(REGISTRY))
+        raise ValueError(f"Unknown dataset key: {key}. Available: {available}") from exc
+    ds, info = loader(num_samples=num_samples, seed=seed)
+    info.setdefault("key", key)
+    return ds, info

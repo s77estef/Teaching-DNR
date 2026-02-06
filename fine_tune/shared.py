@@ -227,12 +227,3 @@ def load_wildguard_train_rendered(
     ds = ds.select(range(min(num_samples, len(ds))))
     return ds
 
-
-# features: ['prompt', 'adversarial', 'response', 'prompt_harm_label', 'response_refusal_label', 'response_harm_label', 'subcategory']
-# num_rows test: 1725
-def load_wildguard_test(seed: int = 42, num_samples: int = 1699) -> Dataset:
-    test = load_dataset("allenai/wildguardmix", "wildguardtest", split="test", columns=["prompt", "prompt_harm_label"])
-    test = test.filter(lambda ex: ex["prompt_harm_label"] is not None)
-    test = test.shuffle(seed=seed)
-    test = test.select(range(num_samples))
-    return test

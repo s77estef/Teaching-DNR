@@ -25,10 +25,10 @@ try:
         SYSTEM_PROMPT_NORMATIVE,
         attach_prompts_for_eval,
         hf_cli_login,
-        load_wildguard_test,
         validate_and_extract_label,
         validate_dataset_columns,
     )
+    from .testdata import REQUIRED_COLUMNS, get_test_dataset
 except ImportError:
     import sys
 
@@ -39,10 +39,10 @@ except ImportError:
         SYSTEM_PROMPT_NORMATIVE,
         attach_prompts_for_eval,
         hf_cli_login,
-        load_wildguard_test,
         validate_and_extract_label,
         validate_dataset_columns,
     )
+    from eval.testdata import REQUIRED_COLUMNS, get_test_dataset
 
 # ---- config settings ----
 
@@ -70,10 +70,7 @@ ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-test_20251218_
 
 
 
-DATASET_NAME = "allenai/wildguardmix"
-DATASET_CONFIG = "wildguardtest"
-DATASET_SPLIT = "test"
-REQUIRED_COLUMNS = {"prompt", "prompt_harm_label"}
+DATASET_KEY = "wildguardmix_test"
 GENERATION_CONFIG = {
     "max_new_tokens": 512,
     "temperature": 0.6,
@@ -86,20 +83,13 @@ if NORMATIVE:
 REASONING_TAG = "think"
 
 
-def _default_dataset_info() -> Dict[str, Any]:
-    return {
-        "name": DATASET_NAME,
-        "config": DATASET_CONFIG,
-        "split": DATASET_SPLIT,
-        "sample_limit": TEST_SAMPLES,
-    }
-
 def check_output(
     print_samples: int = PRINT_SAMPLES,
     adapter_path: str | None = ADAPTER_PATH,
     output_dir: Path | str = RESULTS_DIR,
     test_ds: Optional[Dataset] = None,
     dataset_info: Optional[Dict[str, Any]] = None,
+    dataset_key: str = DATASET_KEY,
 ) -> Path:
     """Generate predictions, compute metrics, and persist a JSON report.
 
@@ -139,8 +129,10 @@ def check_output(
         return generated_text, inference_duration, num_generated_tokens
 
     if test_ds is None:
-        test_ds = load_wildguard_test(num_samples=TEST_SAMPLES)
-        dataset_info = _default_dataset_info()
+        test_ds, dataset_info = get_test_dataset(
+            dataset_key,
+            num_samples=TEST_SAMPLES,
+        )
     else:
         dataset_info = dict(
             dataset_info
@@ -255,7 +247,11 @@ def check_output(
 
 def main() -> None:
     hf_cli_login()
-    check_output(print_samples=PRINT_SAMPLES, adapter_path=ADAPTER_PATH)
+    check_output(
+        print_samples=PRINT_SAMPLES,
+        adapter_path=ADAPTER_PATH,
+        dataset_key=DATASET_KEY,
+    )
 
 
 if __name__ == "__main__":
