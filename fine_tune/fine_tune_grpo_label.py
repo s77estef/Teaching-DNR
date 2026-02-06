@@ -45,7 +45,7 @@ TRAIN_SAMPLES = 10000
 #MODEL_ID = "Qwen/Qwen3-4B-Instruct-2507"
 MODEL_ID = "Qwen/Qwen3-4B"
 DEBUG = False
-NORMATIVE = True # changes system prompt and rewards for normative reasoning
+NORMATIVE = True # changes system prompt for normative reasoning
 
 if NORMATIVE:
     SYSTEM_PROMPT = SYSTEM_PROMPT_NORMATIVE
@@ -168,12 +168,6 @@ def completion_to_text(completion) -> str:
         return completion
     return ""
 
-
-REASONING_TAG = "think"
-
-#if NORMATIVE:
-#    FULL_RE = FULL_RE_N
-
 """
 
 def format_reward(completions, **_):
@@ -183,8 +177,10 @@ def format_reward(completions, **_):
         rewards.append(1.0 if FULL_RE.match(text) else 0.0)
     return rewards
 
-
 """
+
+# TODO: delete this if i only use think
+REASONING_TAG = "think"
 
 def accuracy_reward(completions, **kwargs):
     # Strict accuracy reward: FULL_RE must match exactly, label must be extractable, label must equal gold

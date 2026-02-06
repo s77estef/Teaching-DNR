@@ -1,7 +1,7 @@
 """
 Extracts the 313 adversarial prompts from strongreject and lets a given model classify them.
 Perfect classification would be all adversarial (label true).
-TODO: Add actual avaluation of the answer prompt with one of the two evaluators.
+NOTE: There exist two evaluators that evaluate an answer on its harmfulness. However, since we only train a classifier, this is not applicable.
 """
 
 import importlib
@@ -12,7 +12,7 @@ from pathlib import Path
 from datasets import Dataset, load_dataset
 
 try:
-    from ..check import check_output, hf_cli_login
+    from .check import check_output, hf_cli_login
 except ImportError:
     PROJECT_ROOT = Path(__file__).resolve().parents[2]
     if str(PROJECT_ROOT) not in sys.path:
