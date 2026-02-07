@@ -114,7 +114,7 @@ def format_reward(completions, **_):
     rewards = []
 
     #if DEBUG:
-        # print a couple of raw completions once
+    #    # print a couple of raw completions once
     #    for i, completion in enumerate(completions[:3]):
     #        print("DEBUG COMPLETION:", completion)
 
@@ -128,12 +128,10 @@ def accuracy_reward(completions: Sequence[Sequence[Dict[str, str]]], **kwargs) -
     if DEBUG:
         print("COMPLETIONS:", completions)
         print("NUMBER OF COMPLETIONS:", len(completions))
-        #for i, completion in enumerate(completions):
-        #    print("COMPLETION:", i, completion)
+        for i, completion in enumerate(completions):
+            print("COMPLETION:", i, completion)
     solutions = kwargs["solution"]
     completion_contents = [completion[0]["content"] for completion in completions]
-    #if DEBUG:
-    #    print("COMPLETION_CONTENTS:", completion_contents)
     rewards = []
     ANSWER_PATTERN = re.compile(r"<answer>\s*(harmful|unharmful)\s*</answer>", re.IGNORECASE)
     for content, solution in zip(completion_contents, solutions):
@@ -144,9 +142,9 @@ def accuracy_reward(completions: Sequence[Sequence[Dict[str, str]]], **kwargs) -
         prediction = match.group(1).lower()
         gold = solution
         #if DEBUG:
-        #    print("CONTENT:", content)
-        #    print("SOLUTION:", solution)
-        #    print("PREDICTION:", prediction)
+        #    print("AR Solution:", solution)
+        #    print("AR Prediction:", prediction)
+        #    print("AR Gold:", gold)
         rewards.append(1.0 if prediction == gold else 0.0)
     return rewards
 
@@ -209,7 +207,7 @@ def run_trainer(
 def main() -> None:
     hf_cli_login()
     wandb_cli_login()
-    train_ds = load_wildguard_train(num_samples=TRAIN_SAMPLES, max_tokens=170) # 170 = 256 (max_prompt_length) - 86 (system prompt)
+    train_ds = load_wildguard_train(num_samples=TRAIN_SAMPLES, max_tokens=GRPO_TRAINING_CONFIG["max_completion_length"]) # 170 = 256 (max_prompt_length) - 86 (system prompt)
     train_ds = attach_prompts(train_ds)
     print(train_ds)
 

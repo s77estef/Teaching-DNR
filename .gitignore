@@ -7,6 +7,7 @@ fine_tune/trained_experiments
 fine_tune/trained_experiments_wrong
 fine_tune/count_tokens.py
 fine_tune/completion_params/Q*
+eval/eval_datasets.txt
 
 environment_scratch.yml
 
