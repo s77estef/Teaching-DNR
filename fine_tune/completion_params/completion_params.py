@@ -7,7 +7,7 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Sequence, Tuple
+from typing import Optional, Any, Dict, List, Sequence, Tuple
 
 import torch
 from datasets import Dataset
@@ -79,6 +79,19 @@ def load_model() -> torch.nn.Module:
 
 # --------------------------------------------------------- REWARDS
 
+
+def completion_to_text(completion) -> str:
+    # TRL common shape: [{"content": "..."}]
+    if isinstance(completion, list) and completion:
+        first = completion[0]
+        if isinstance(first, dict) and "content" in first:
+            return str(first["content"] or "")
+        if isinstance(first, str):
+            return first
+    # fallback
+    if isinstance(completion, str):
+        return completion
+    return ""
 
 FULL_RE = re.compile(
     r"^\s*<think>.*?</think>\s*<answer>\s*(?P<label>harmful|unharmful)\s*</answer>\s*$",
@@ -467,8 +480,14 @@ def run_generation() -> None:
     for generation_config in _iter_generation_configs(GENERATION_CONFIG):
         start_time = time.time()
         completions = generate_completions(model, tokenizer, prompts, generation_config)
-        rewards = accuracy_reward(completions)
         group_size = int(generation_config.get("num_generations", 1))
+        if group_size > 0:
+            expanded_solutions = []
+            for solution in solutions:
+                expanded_solutions.extend([solution] * group_size)
+        else:
+            expanded_solutions = list(solutions)
+        rewards = accuracy_reward(completions, solution=expanded_solutions)
         reward_mads = []
         if group_size > 0:
             for start in range(0, len(rewards), group_size):
@@ -485,7 +504,7 @@ def run_generation() -> None:
 
         payload = {
             "completions": completions,
-            "rewards": {"format_reward": rewards},
+            "rewards": {"accuracy_reward": rewards},
             "prompts": list(prompts),
             "solutions": list(solutions),
             "generation_config": dict(generation_config),
