@@ -82,9 +82,32 @@ def load_strongreject_test(
     return ds, info
 
 
+def load_coconot_contrast_test(
+    *,
+    num_samples: int | None = None,
+    seed: int = 42,
+) -> Tuple[Dataset, Dict[str, Any]]:
+    ds = load_dataset("allenai/coconot", "contrast", split="test")
+    ds = ds.add_column("prompt_harm_label", ["unharmful"] * len(ds))
+    drop_cols = [col for col in ds.column_names if col not in REQUIRED_COLUMNS]
+    if drop_cols:
+        ds = ds.remove_columns(drop_cols)
+    ds = ds.shuffle(seed=seed)
+    ds = _select_num_samples(ds, num_samples)
+    info = _dataset_info(
+        name="allenai/coconot",
+        config="contrast",
+        split="test",
+        sample_limit=num_samples,
+        expected_label="unharmful",
+    )
+    return ds, info
+
+
 REGISTRY = {
     "wildguardmix_test": load_wildguardmix_test,
     "strongreject_test": load_strongreject_test,
+    "coconot_contrast_test": load_coconot_contrast_test,
 }
 
 
