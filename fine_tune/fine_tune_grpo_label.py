@@ -15,7 +15,7 @@ from datasets import Dataset, load_dataset
 from huggingface_hub import login
 from math_verify import LatexExtractionConfig, parse, verify
 from peft import LoraConfig, get_peft_model, PeftModel
-from transformers import AutoTokenizer, AutoModelForCausalLM, TrainerCallback
+from transformers import AutoTokenizer, AutoModelForCausalLM
 from trl import GRPOConfig, GRPOTrainer
 
 torch.backends.cuda.matmul.allow_tf32 = True
@@ -36,6 +36,7 @@ from fine_tune.shared import (
     hf_cli_login,
     wandb_cli_login,
 )
+from fine_tune.train_logger import RewardLogger, completion_to_text
 
 # ---- config settings ----
 
@@ -59,7 +60,6 @@ OUTPUT_DIR = os.path.join(
 )
 GRPO_CONFIG_FILENAME = "grpo_config.json"
 REWARD_SOURCE_FILENAME = "reward_funcs.py"
-CHECKPOINT_BATCH_LOG_FILENAME = "checkpoint_batch_samples.jsonl"
 GRPO_TRAINING_CONFIG_C = {
     "output_dir": OUTPUT_DIR,
     "learning_rate": 1e-5,
@@ -155,18 +155,7 @@ def load_lora_model(lora_overrides: Dict[str, Any] | None = None) -> torch.nn.Mo
 
 # --------------------------------------------------------- REWARDS
 
-def completion_to_text(completion) -> str:
-    # TRL common shape: [{"content": "..."}]
-    if isinstance(completion, list) and completion:
-        first = completion[0]
-        if isinstance(first, dict) and "content" in first:
-            return str(first["content"] or "")
-        if isinstance(first, str):
-            return first
-    # fallback
-    if isinstance(completion, str):
-        return completion
-    return ""
+ 
 
 """
 
@@ -188,7 +177,9 @@ def accuracy_reward(completions, **kwargs):
     rewards = []
 
     for completion, solution in zip(completions, solutions):
+        print("COMPLETION:", completion)
         text = completion_to_text(completion).strip()
+        print("TEXT:", text)
         pred = extract_label_if_any(text, reasoning_tag=REASONING_TAG)
 
         if pred is None:
@@ -250,235 +241,6 @@ def _write_reward_source(output_dir: str) -> Path:
     return output_file
 
 
-def _safe_json_value(value: Any) -> Any:
-    try:
-        json.dumps(value)
-        return value
-    except TypeError:
-        return str(value)
-
-
-def _normalize_list(value: Any, batch_size: int) -> List[Any]:
-    if value is None:
-        return [None] * batch_size
-    if isinstance(value, (list, tuple)) and len(value) == batch_size:
-        return list(value)
-    return [value] * batch_size
-
-
-def _extract_system_user(prompt_val: Any) -> Tuple[str | None, str | None]:
-    if isinstance(prompt_val, list):
-        system = None
-        user = None
-        for msg in prompt_val:
-            if not isinstance(msg, dict):
-                continue
-            role = msg.get("role")
-            if role == "system" and system is None:
-                system = msg.get("content")
-            elif role == "user" and user is None:
-                user = msg.get("content")
-        return system, user
-    if isinstance(prompt_val, dict):
-        return None, prompt_val.get("content")
-    return None, str(prompt_val)
-
-
-_LOGGING_TOKENIZER: AutoTokenizer | None = None
-
-
-def _get_logging_tokenizer() -> AutoTokenizer:
-    global _LOGGING_TOKENIZER
-    if _LOGGING_TOKENIZER is None:
-        _LOGGING_TOKENIZER = AutoTokenizer.from_pretrained(MODEL_ID, use_fast=True)
-        _LOGGING_TOKENIZER.pad_token = _LOGGING_TOKENIZER.eos_token
-    return _LOGGING_TOKENIZER
-
-
-def _render_prompt_string(prompt_val: Any, system_prompt: str) -> str:
-    if isinstance(prompt_val, str):
-        return prompt_val
-
-    tokenizer = _get_logging_tokenizer()
-
-    if isinstance(prompt_val, list):
-        msgs = [msg for msg in prompt_val if isinstance(msg, dict)]
-        if msgs:
-            return tokenizer.apply_chat_template(
-                msgs, tokenize=False, add_generation_prompt=True
-            )
-
-    if isinstance(prompt_val, dict):
-        role = prompt_val.get("role")
-        content = prompt_val.get("content")
-        if role and content is not None:
-            msgs = [{"role": role, "content": content}]
-        else:
-            msgs = [{"role": "user", "content": str(content) if content is not None else str(prompt_val)}]
-        return tokenizer.apply_chat_template(
-            msgs, tokenize=False, add_generation_prompt=True
-        )
-
-    msgs = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": str(prompt_val)},
-    ]
-    return tokenizer.apply_chat_template(
-        msgs, tokenize=False, add_generation_prompt=True
-    )
-
-
-def _write_reward_batch_log(step: int, output_dir: str, payload: Dict[str, Any]) -> None:
-    completions = payload.get("completions") or []
-    if not isinstance(completions, list):
-        completions = [completions]
-    rewards_by_func = payload.get("rewards") or {}
-    batch_size = len(completions)
-    raw_prompts = payload.get("prompts")
-    raw_user_prompts = payload.get("user_prompts")
-    raw_solutions = payload.get("solutions")
-    prompts_list = list(raw_prompts) if isinstance(raw_prompts, (list, tuple)) else None
-    user_prompts_list = (
-        list(raw_user_prompts) if isinstance(raw_user_prompts, (list, tuple)) else None
-    )
-    solutions_list = list(raw_solutions) if isinstance(raw_solutions, (list, tuple)) else None
-    num_prompts = len(prompts_list) if prompts_list else 0
-    group_size = (
-        batch_size // num_prompts
-        if num_prompts and batch_size % num_prompts == 0
-        else None
-    )
-    prompts = _normalize_list(raw_prompts, batch_size)
-    user_prompts = _normalize_list(raw_user_prompts, batch_size)
-    solutions = _normalize_list(raw_solutions, batch_size)
-
-    checkpoint_dir = Path(output_dir) / f"checkpoint-{step}"
-    checkpoint_dir.mkdir(parents=True, exist_ok=True)
-    output_file = checkpoint_dir / CHECKPOINT_BATCH_LOG_FILENAME
-    with output_file.open("w", encoding="utf-8") as fout:
-        def _write_entry(entry: Dict[str, Any]) -> None:
-            fout.write(json.dumps(entry, ensure_ascii=True, indent=2))
-            fout.write("\n\n")
-
-        system_prompt = SYSTEM_PROMPT
-        if prompts:
-            extracted_system, _ = _extract_system_user(prompts[0])
-            if extracted_system:
-                system_prompt = extracted_system
-        header = {"step": step, "system_prompt": system_prompt}
-        _write_entry(header)
-
-        if batch_size == 0:
-            return
-
-        if group_size:
-            prompt_keys = []
-            for prompt_val in prompts_list or []:
-                _, user_prompt = _extract_system_user(prompt_val)
-                prompt_keys.extend([user_prompt] * group_size)
-        else:
-            prompt_keys = []
-            for prompt_val in prompts:
-                _, user_prompt = _extract_system_user(prompt_val)
-                prompt_keys.append(user_prompt)
-
-        groups: List[Tuple[int, int]] = []
-        start_idx = 0
-        for idx in range(1, batch_size):
-            if prompt_keys[idx] != prompt_keys[idx - 1]:
-                groups.append((start_idx, idx))
-                start_idx = idx
-        groups.append((start_idx, batch_size))
-
-        for start_idx, end_idx in groups:
-            prompt_val = prompts[start_idx]
-            solution_val = solutions[start_idx]
-            user_prompt = user_prompts[start_idx]
-            if user_prompt is None:
-                _, user_prompt = _extract_system_user(prompt_val)
-            rendered_string = _render_prompt_string(prompt_val, system_prompt)
-            completion_group = [
-                completion_to_text(item) for item in completions[start_idx:end_idx]
-            ]
-            reward_totals = []
-            for local_idx in range(start_idx, end_idx):
-                total = 0.0
-                for rewards in rewards_by_func.values():
-                    if isinstance(rewards, (list, tuple)) and local_idx < len(rewards):
-                        try:
-                            total += float(rewards[local_idx])
-                        except (TypeError, ValueError):
-                            total += 0.0
-                reward_totals.append(total)
-            entry = {
-                "prompt": _safe_json_value(user_prompt),
-                "rendered_string": _safe_json_value(rendered_string),
-                "solution": _safe_json_value(solution_val),
-                "completions": completion_group,
-                "rewards": reward_totals,
-            }
-            _write_entry(entry)
-
-
-class _RewardLogState:
-    def __init__(self, num_funcs: int, output_dir: str, save_steps: int | None) -> None:
-        self.num_funcs = num_funcs
-        self.output_dir = output_dir
-        self.save_steps = save_steps
-        self.current_step = 0
-        self.is_main_process = True
-        self.active = False
-        self.logged_steps: set[int] = set()
-        self.pending: Dict[int, Dict[str, Any]] = {}
-
-    def update_step(self, step: int, is_main_process: bool) -> None:
-        self.current_step = step
-        self.is_main_process = is_main_process
-        self.active = (
-            bool(self.save_steps)
-            and step > 0
-            and step % int(self.save_steps) == 0
-        )
-
-
-def _make_logging_reward(func, log_state: _RewardLogState):
-    name = getattr(func, "__name__", "reward_func")
-
-    def wrapped(completions, **kwargs):
-        rewards = func(completions, **kwargs)
-        if not (log_state.active and log_state.is_main_process):
-            return rewards
-        step = log_state.current_step
-        if step in log_state.logged_steps:
-            return rewards
-        payload = log_state.pending.setdefault(
-            step,
-            {
-                "rewards": {},
-                "completions": completions,
-                "prompts": None,
-                "user_prompts": None,
-                "solutions": None,
-            },
-        )
-        if payload["prompts"] is None:
-            payload["prompts"] = kwargs.get("prompts") or kwargs.get("prompt")
-        if payload["user_prompts"] is None:
-            payload["user_prompts"] = (
-                kwargs.get("user_prompts") or kwargs.get("user_prompt")
-            )
-        if payload["solutions"] is None:
-            payload["solutions"] = kwargs.get("solutions") or kwargs.get("solution")
-        payload["rewards"][name] = rewards
-        if len(payload["rewards"]) >= log_state.num_funcs:
-            _write_reward_batch_log(step, log_state.output_dir, payload)
-            log_state.logged_steps.add(step)
-            log_state.pending.pop(step, None)
-        return rewards
-
-    return wrapped
-
-
 def run_trainer(
     model: torch.nn.Module,
     dataset: Dataset,
@@ -495,21 +257,16 @@ def run_trainer(
 
     reward_funcs = [accuracy_reward]
     save_steps = training_args.save_steps or GRPO_TRAINING_CONFIG.get("save_steps")
-    log_state = _RewardLogState(
-        num_funcs=len(reward_funcs),
+    reward_logger = RewardLogger(
+        model_id=MODEL_ID,
+        system_prompt=SYSTEM_PROMPT,
         output_dir=training_args.output_dir,
         save_steps=save_steps,
+        num_funcs=len(reward_funcs),
     )
     logged_reward_funcs = [
-        _make_logging_reward(func, log_state) for func in reward_funcs
+        reward_logger.wrap_reward(func) for func in reward_funcs
     ]
-
-    class _RewardBatchLogger(TrainerCallback):
-        def on_step_begin(self, args, state, control, **kwargs):
-            step = state.global_step + 1
-            is_main = getattr(state, "is_world_process_zero", True)
-            log_state.update_step(step, is_main)
-            return control
 
     trainer = GRPOTrainer(
         model=model,
@@ -518,7 +275,7 @@ def run_trainer(
         args=training_args,
         train_dataset=dataset,
     )
-    trainer.add_callback(_RewardBatchLogger())
+    trainer.add_callback(reward_logger.get_callback())
     start_time = time.time()
     trainer.train()
     elapsed = time.time() - start_time
