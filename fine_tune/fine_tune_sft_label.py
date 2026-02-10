@@ -15,17 +15,33 @@ from peft import LoraConfig, get_peft_model
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from trl import SFTConfig, SFTTrainer
 
-from fine_tune.shared import SYSTEM_PROMPT, SYSTEM_PROMPT_FS, load_wildguard_train, hf_cli_login, wandb_cli_login
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in os.sys.path:
+    os.sys.path.append(str(PROJECT_ROOT))
+
+from fine_tune.shared import (
+    SYSTEM_PROMPT,
+    SYSTEM_PROMPT_FS,
+    SYSTEM_PROMPT_NORMATIVE,
+    load_wildguard_train_rendered,
+    hf_cli_login,
+    wandb_cli_login,
+)
+from fine_tune.train_logger import SFTLogger, wrap_data_collator
 
 
 # ---- config settings ----
 
-TRAIN_SAMPLES = 100
+TRAIN_SAMPLES = 1000
 #MODEL_ID = "Qwen/Qwen2-0.5B-Instruct"
 #MODEL_ID = "Qwen/Qwen3-4B-Thinking-2507"
 #MODEL_ID = "Qwen/Qwen3-4B-Instruct-2507"
 MODEL_ID = "Qwen/Qwen3-4B"
 DEBUG = False
+NORMATIVE = True
+
+if NORMATIVE:
+    SYSTEM_PROMPT = SYSTEM_PROMPT_NORMATIVE
 
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 model_name = MODEL_ID.split("/", 1)[-1]
@@ -50,6 +66,11 @@ SFT_TRAINING_CONFIG = {
     "save_strategy": "steps",
     "save_steps": 25,
 }
+SFT_GENERATION_CONFIG = {
+    "max_new_tokens": 256,
+    "temperature": 0.6,
+}
+SFT_LOG_GENERATION_SAMPLES = 2
 
 LORA_CONFIG: Dict[str, Any] = {
     "task_type": "CAUSAL_LM",
@@ -71,21 +92,46 @@ LORA_CONFIG: Dict[str, Any] = {
 # ------------------------------------
 
 
-def attach_prompts(dataset: Dataset) -> Dataset:
-    def make_conversation(example: Dict) -> Dict[str, List[Dict[str, str]]]:
-        label = example["prompt_harm_label"].lower()
-        if label not in {"harmful", "unharmful"}:
-            raise ValueError(f"Unexpected prompt_harm_label: {label}")
-        return {
-            "prompt": [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": example["prompt"]},
-            ],
-            "completion": [
-                {"role": "assistant", "content": f"<think></think><answer>{label}</answer>"}
-            ],
-        }
-    return dataset.map(make_conversation, remove_columns=["prompt_harm_label"])
+RAW_LOG_FIELDS = ("prompt", "rendered_string", "solution", "completion")
+
+
+def _build_completion(label: str) -> str:
+    label = (label or "").lower()
+    if label not in {"harmful", "unharmful"}:
+        raise ValueError(f"Unexpected prompt_harm_label: {label}")
+    return f"<normative_reasoning></normative_reasoning><answer>{label}</answer>"
+
+
+def prepare_sft_dataset() -> Dataset:
+    ds = load_wildguard_train_rendered(
+        num_samples=TRAIN_SAMPLES,
+        max_prompt_tokens=SFT_TRAINING_CONFIG["max_length"],
+        tokenizer_name=MODEL_ID,
+        system_prompt=SYSTEM_PROMPT,
+    )
+    ds = ds.rename_column("prompt", "rendered_string")
+    ds = ds.rename_column("user_prompt", "prompt")
+
+    def add_completion(ex: Dict[str, Any]) -> Dict[str, Any]:
+        return {"completion": _build_completion(ex["solution"])}
+
+    return ds.map(add_completion)
+
+
+class LoggingSFTTrainer(SFTTrainer):
+    def __init__(self, *args, sft_logger: SFTLogger | None = None, **kwargs) -> None:
+        self.sft_logger = sft_logger
+        self._last_raw_batch: Dict[str, Any] | None = None
+        super().__init__(*args, **kwargs)
+
+    def training_step(self, model, inputs):
+        if self.sft_logger is not None:
+            raw = {field: inputs.get(field) for field in RAW_LOG_FIELDS}
+            self._last_raw_batch = raw
+            for field in RAW_LOG_FIELDS:
+                if field in inputs:
+                    inputs.pop(field)
+        return super().training_step(model, inputs)
 
 
 def load_lora_model(lora_overrides: Dict[str, Any] | None = None) -> torch.nn.Module:
@@ -134,19 +180,34 @@ def run_trainer(
     training_args: SFTConfig,
     training_config: Dict[str, Any] | None = None,
 ) -> SFTTrainer:
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, padding_side="left")
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, padding_side="right")
     tokenizer.pad_token = tokenizer.eos_token
 
     config_for_log = copy.deepcopy(training_config or SFT_TRAINING_CONFIG)
     _write_sft_config(config_for_log, training_args.output_dir)
 
-    trainer = SFTTrainer(
+    save_steps = training_args.save_steps or SFT_TRAINING_CONFIG.get("save_steps")
+    sft_logger = SFTLogger(
+        system_prompt=SYSTEM_PROMPT,
+        output_dir=training_args.output_dir,
+        save_steps=save_steps,
+        generate_samples=SFT_LOG_GENERATION_SAMPLES,
+        generation_config=SFT_GENERATION_CONFIG,
+    )
+
+    def formatting_func(ex: Dict[str, Any]) -> str:
+        return f"{ex['rendered_string']}{ex['completion']}"
+
+    trainer = LoggingSFTTrainer(
         model=model,
         processing_class=tokenizer,
         args=training_args,
         train_dataset=dataset,
-        #formatting_func=conversation_formatter,
+        formatting_func=formatting_func,
+        sft_logger=sft_logger,
     )
+    trainer.data_collator = wrap_data_collator(trainer.data_collator, RAW_LOG_FIELDS)
+    trainer.add_callback(sft_logger.get_callback(trainer))
     start_time = time.time()
     trainer.train()
     #trainer.train(resume_from_checkpoint="fine_tune/trained_experiments/name_here/checkpoint-1000")
@@ -163,8 +224,7 @@ def run_trainer(
 def main() -> None:
     hf_cli_login()
     wandb_cli_login()
-    train_ds = load_wildguard_train(num_samples=TRAIN_SAMPLES)
-    train_ds = attach_prompts(train_ds)
+    train_ds = prepare_sft_dataset()
     print(train_ds)
 
     model = load_lora_model()

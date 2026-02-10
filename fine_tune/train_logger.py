@@ -1,7 +1,9 @@
 import json
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
+import torch
 from transformers import AutoTokenizer, TrainerCallback
 
 
@@ -268,3 +270,150 @@ class RewardLogger:
 
         return _RewardBatchLogger()
 
+
+def wrap_data_collator(base_collator, raw_fields: Tuple[str, ...]):
+    def wrapped(examples):
+        raw_batch = {field: [ex.get(field) for ex in examples] for field in raw_fields}
+        stripped = [{k: v for k, v in ex.items() if k not in raw_fields} for ex in examples]
+        batch = base_collator(stripped)
+        batch.update(raw_batch)
+        return batch
+
+    return wrapped
+
+
+class SFTLogger:
+    def __init__(
+        self,
+        *,
+        system_prompt: str,
+        output_dir: str | Path,
+        save_steps: int | None,
+        generate_samples: int = 0,
+        generation_config: Dict[str, Any] | None = None,
+    ) -> None:
+        self.system_prompt = system_prompt
+        self.output_dir = str(output_dir)
+        self.save_steps = save_steps
+        self.generate_samples = int(generate_samples or 0)
+        self.generation_config = dict(generation_config or {})
+
+        self.current_step = 0
+        self.is_main_process = True
+        self.active = False
+        self.logged_steps: set[int] = set()
+
+    def update_step(self, step: int, is_main_process: bool) -> None:
+        self.current_step = step
+        self.is_main_process = is_main_process
+        self.active = bool(self.save_steps) and step > 0 and step % int(self.save_steps) == 0
+
+    def _generate_for_prompt(
+        self,
+        model,
+        tokenizer: AutoTokenizer,
+        rendered_string: str,
+    ) -> Dict[str, Any]:
+        inputs = tokenizer(rendered_string, return_tensors="pt").to(model.device)
+        start_time = time.time()
+        with torch.no_grad():
+            output_ids = model.generate(
+                **inputs,
+                **self.generation_config,
+                eos_token_id=tokenizer.eos_token_id,
+            )
+        end_time = time.time()
+        gen_tokens = output_ids[0, inputs["input_ids"].shape[1] :]
+        generated_text = tokenizer.decode(gen_tokens, skip_special_tokens=True)
+        return {
+            "model_response": (generated_text or "").strip(),
+            "generated_tokens": int(output_ids.shape[1] - inputs["input_ids"].shape[1]),
+            "inference_seconds": float(end_time - start_time),
+        }
+
+    def _write_sft_batch_log(
+        self,
+        step: int,
+        batch: Dict[str, Any],
+        *,
+        model=None,
+        tokenizer: AutoTokenizer | None = None,
+    ) -> None:
+        raw_prompts = batch.get("prompt")
+        raw_rendered = batch.get("rendered_string")
+        raw_solutions = batch.get("solution")
+        raw_completions = batch.get("completion")
+
+        batch_size = 0
+        for candidate in (raw_prompts, raw_rendered, raw_solutions, raw_completions):
+            if isinstance(candidate, (list, tuple)):
+                batch_size = len(candidate)
+                break
+        if batch_size == 0:
+            return
+
+        prompts = _normalize_list(raw_prompts, batch_size)
+        rendered = _normalize_list(raw_rendered, batch_size)
+        solutions = _normalize_list(raw_solutions, batch_size)
+        completions = _normalize_list(raw_completions, batch_size)
+
+        checkpoint_dir = Path(self.output_dir) / f"checkpoint-{step}"
+        checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        output_file = checkpoint_dir / CHECKPOINT_BATCH_LOG_FILENAME
+        with output_file.open("w", encoding="utf-8") as fout:
+            def _write_entry(entry: Dict[str, Any]) -> None:
+                fout.write(json.dumps(entry, ensure_ascii=True, indent=2))
+                fout.write("\n\n")
+
+            header = {"step": step, "system_prompt": self.system_prompt}
+            _write_entry(header)
+
+            for idx, (prompt, rendered_string, solution, completion) in enumerate(
+                zip(prompts, rendered, solutions, completions)
+            ):
+                entry = {
+                    "prompt": _safe_json_value(prompt),
+                    "rendered_string": _safe_json_value(rendered_string),
+                    "solution": _safe_json_value(solution),
+                    "completion": _safe_json_value(completion),
+                }
+                if (
+                    self.generate_samples > 0
+                    and model is not None
+                    and tokenizer is not None
+                    and idx < self.generate_samples
+                ):
+                    gen_info = self._generate_for_prompt(
+                        model, tokenizer, str(rendered_string)
+                    )
+                    entry.update(gen_info)
+                _write_entry(entry)
+
+    def get_callback(self, trainer):
+        logger = self
+
+        class _SFTBatchLogger(TrainerCallback):
+            def on_step_begin(self, args, state, control, **kwargs):
+                step = state.global_step + 1
+                is_main = getattr(state, "is_world_process_zero", True)
+                logger.update_step(step, is_main)
+                return control
+
+            def on_step_end(self, args, state, control, **kwargs):
+                if not (logger.active and logger.is_main_process):
+                    return control
+                step = logger.current_step
+                if step in logger.logged_steps:
+                    return control
+                batch = getattr(trainer, "_last_raw_batch", None)
+                if batch:
+                    logger._write_sft_batch_log(
+                        step,
+                        batch,
+                        model=trainer.model,
+                        tokenizer=trainer.processing_class,
+                    )
+                logger.logged_steps.add(step)
+                return control
+
+        return _SFTBatchLogger()
