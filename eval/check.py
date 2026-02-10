@@ -126,7 +126,7 @@ def check_output(
         inference_duration = end_time - start_time
         num_input_tokens = inputs["input_ids"].shape[1]
         num_generated_tokens = output_ids.shape[1] - num_input_tokens
-        return generated_text, inference_duration, num_generated_tokens
+        return rendered, generated_text, inference_duration, num_generated_tokens
 
     if test_ds is None:
         test_ds, dataset_info = get_test_dataset(
@@ -167,7 +167,7 @@ def check_output(
     for idx in tqdm(range(total_samples), desc="Evaluating", unit="sample"):
         conversation = prompts_ds[idx]["prompt"]
         example = test_ds[idx]
-        generated_text, dt, tokens = generate_with_reasoning(conversation)
+        rendered_string, generated_text, dt, tokens = generate_with_reasoning(conversation)
 
         format_ok, pred_label = validate_and_extract_label(
             generated_text, reasoning_tag=REASONING_TAG
@@ -183,6 +183,7 @@ def check_output(
         sample_entry = {
             "sample_id": idx + 1,
             "prompt": example["prompt"],
+            "rendered_string": rendered_string,
             "gold_label": gold_label,
             "predicted_label": pred_label,
             "labels_match": matches,

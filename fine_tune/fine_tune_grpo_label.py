@@ -39,7 +39,7 @@ from fine_tune.shared import (
 
 # ---- config settings ----
 
-TRAIN_SAMPLES = 10000
+TRAIN_SAMPLES = 100
 #MODEL_ID = "Qwen/Qwen2-0.5B-Instruct"
 #MODEL_ID = "Qwen/Qwen3-4B-Thinking-2507"
 #MODEL_ID = "Qwen/Qwen3-4B-Instruct-2507"
@@ -83,7 +83,7 @@ GRPO_TRAINING_CONFIG_C = {
     "report_to": ["wandb"],
     "logging_steps": 10,
     "save_strategy": "steps",
-    "save_steps": 25,
+    "save_steps": 1,
 }
 GRPO_TRAINING_CONFIG_B = {
     "output_dir": OUTPUT_DIR,
@@ -284,6 +284,50 @@ def _extract_system_user(prompt_val: Any) -> Tuple[str | None, str | None]:
     return None, str(prompt_val)
 
 
+_LOGGING_TOKENIZER: AutoTokenizer | None = None
+
+
+def _get_logging_tokenizer() -> AutoTokenizer:
+    global _LOGGING_TOKENIZER
+    if _LOGGING_TOKENIZER is None:
+        _LOGGING_TOKENIZER = AutoTokenizer.from_pretrained(MODEL_ID, use_fast=True)
+        _LOGGING_TOKENIZER.pad_token = _LOGGING_TOKENIZER.eos_token
+    return _LOGGING_TOKENIZER
+
+
+def _render_prompt_string(prompt_val: Any, system_prompt: str) -> str:
+    if isinstance(prompt_val, str):
+        return prompt_val
+
+    tokenizer = _get_logging_tokenizer()
+
+    if isinstance(prompt_val, list):
+        msgs = [msg for msg in prompt_val if isinstance(msg, dict)]
+        if msgs:
+            return tokenizer.apply_chat_template(
+                msgs, tokenize=False, add_generation_prompt=True
+            )
+
+    if isinstance(prompt_val, dict):
+        role = prompt_val.get("role")
+        content = prompt_val.get("content")
+        if role and content is not None:
+            msgs = [{"role": role, "content": content}]
+        else:
+            msgs = [{"role": "user", "content": str(content) if content is not None else str(prompt_val)}]
+        return tokenizer.apply_chat_template(
+            msgs, tokenize=False, add_generation_prompt=True
+        )
+
+    msgs = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": str(prompt_val)},
+    ]
+    return tokenizer.apply_chat_template(
+        msgs, tokenize=False, add_generation_prompt=True
+    )
+
+
 def _write_reward_batch_log(step: int, output_dir: str, payload: Dict[str, Any]) -> None:
     completions = payload.get("completions") or []
     if not isinstance(completions, list):
@@ -291,8 +335,12 @@ def _write_reward_batch_log(step: int, output_dir: str, payload: Dict[str, Any])
     rewards_by_func = payload.get("rewards") or {}
     batch_size = len(completions)
     raw_prompts = payload.get("prompts")
+    raw_user_prompts = payload.get("user_prompts")
     raw_solutions = payload.get("solutions")
     prompts_list = list(raw_prompts) if isinstance(raw_prompts, (list, tuple)) else None
+    user_prompts_list = (
+        list(raw_user_prompts) if isinstance(raw_user_prompts, (list, tuple)) else None
+    )
     solutions_list = list(raw_solutions) if isinstance(raw_solutions, (list, tuple)) else None
     num_prompts = len(prompts_list) if prompts_list else 0
     group_size = (
@@ -301,6 +349,7 @@ def _write_reward_batch_log(step: int, output_dir: str, payload: Dict[str, Any])
         else None
     )
     prompts = _normalize_list(raw_prompts, batch_size)
+    user_prompts = _normalize_list(raw_user_prompts, batch_size)
     solutions = _normalize_list(raw_solutions, batch_size)
 
     checkpoint_dir = Path(output_dir) / f"checkpoint-{step}"
@@ -344,7 +393,10 @@ def _write_reward_batch_log(step: int, output_dir: str, payload: Dict[str, Any])
         for start_idx, end_idx in groups:
             prompt_val = prompts[start_idx]
             solution_val = solutions[start_idx]
-            _, user_prompt = _extract_system_user(prompt_val)
+            user_prompt = user_prompts[start_idx]
+            if user_prompt is None:
+                _, user_prompt = _extract_system_user(prompt_val)
+            rendered_string = _render_prompt_string(prompt_val, system_prompt)
             completion_group = [
                 completion_to_text(item) for item in completions[start_idx:end_idx]
             ]
@@ -360,6 +412,7 @@ def _write_reward_batch_log(step: int, output_dir: str, payload: Dict[str, Any])
                 reward_totals.append(total)
             entry = {
                 "prompt": _safe_json_value(user_prompt),
+                "rendered_string": _safe_json_value(rendered_string),
                 "solution": _safe_json_value(solution_val),
                 "completions": completion_group,
                 "rewards": reward_totals,
@@ -400,10 +453,20 @@ def _make_logging_reward(func, log_state: _RewardLogState):
             return rewards
         payload = log_state.pending.setdefault(
             step,
-            {"rewards": {}, "completions": completions, "prompts": None, "solutions": None},
+            {
+                "rewards": {},
+                "completions": completions,
+                "prompts": None,
+                "user_prompts": None,
+                "solutions": None,
+            },
         )
         if payload["prompts"] is None:
             payload["prompts"] = kwargs.get("prompts") or kwargs.get("prompt")
+        if payload["user_prompts"] is None:
+            payload["user_prompts"] = (
+                kwargs.get("user_prompts") or kwargs.get("user_prompt")
+            )
         if payload["solutions"] is None:
             payload["solutions"] = kwargs.get("solutions") or kwargs.get("solution")
         payload["rewards"][name] = rewards
