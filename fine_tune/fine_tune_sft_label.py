@@ -23,6 +23,7 @@ from fine_tune.shared import (
     SYSTEM_PROMPT,
     SYSTEM_PROMPT_FS,
     SYSTEM_PROMPT_NORMATIVE,
+    SYSTEM_PROMPT_NNORMATIVE,
     load_wildguard_train_rendered,
     hf_cli_login,
     wandb_cli_login,
@@ -32,7 +33,7 @@ from fine_tune.train_logger import SFTLogger, wrap_data_collator
 
 # ---- config settings ----
 
-TRAIN_SAMPLES = 1000
+TRAIN_SAMPLES = 10000
 #MODEL_ID = "Qwen/Qwen2-0.5B-Instruct"
 #MODEL_ID = "Qwen/Qwen3-4B-Thinking-2507"
 #MODEL_ID = "Qwen/Qwen3-4B-Instruct-2507"
@@ -41,7 +42,7 @@ DEBUG = False
 NORMATIVE = True
 
 if NORMATIVE:
-    SYSTEM_PROMPT = SYSTEM_PROMPT_NORMATIVE
+    SYSTEM_PROMPT = SYSTEM_PROMPT_NNORMATIVE
 
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 model_name = MODEL_ID.split("/", 1)[-1]
@@ -56,7 +57,7 @@ SFT_TRAINING_CONFIG = {
     "learning_rate": 1e-5,
     "remove_unused_columns": False,
     "per_device_train_batch_size": 8,
-    "gradient_accumulation_steps": 16,
+    "gradient_accumulation_steps": 1,
     "num_train_epochs": 1,
     "bf16": True,
     "max_length": 256,
@@ -64,13 +65,13 @@ SFT_TRAINING_CONFIG = {
     "report_to": ["wandb"],
     "logging_steps": 10,
     "save_strategy": "steps",
-    "save_steps": 25,
+    "save_steps": 20,
 }
 SFT_GENERATION_CONFIG = {
     "max_new_tokens": 256,
     "temperature": 0.6,
 }
-SFT_LOG_GENERATION_SAMPLES = 2
+SFT_LOG_GENERATION_SAMPLES = -1
 
 LORA_CONFIG: Dict[str, Any] = {
     "task_type": "CAUSAL_LM",
@@ -92,14 +93,17 @@ LORA_CONFIG: Dict[str, Any] = {
 # ------------------------------------
 
 
-RAW_LOG_FIELDS = ("prompt", "rendered_string", "solution", "completion")
+RAW_LOG_FIELDS = ("user_prompt", "rendered_string", "solution", "completion")
 
 
 def _build_completion(label: str) -> str:
     label = (label or "").lower()
     if label not in {"harmful", "unharmful"}:
         raise ValueError(f"Unexpected prompt_harm_label: {label}")
-    return f"<normative_reasoning></normative_reasoning><answer>{label}</answer>"
+    completion = f"<think></think><answer>{label}</answer>"
+    if NORMATIVE:
+        completion = f"<normative_reasoning></normative_reasoning><answer>{label}</answer>"
+    return completion
 
 
 def prepare_sft_dataset() -> Dataset:
@@ -110,10 +114,12 @@ def prepare_sft_dataset() -> Dataset:
         system_prompt=SYSTEM_PROMPT,
     )
     ds = ds.rename_column("prompt", "rendered_string")
-    ds = ds.rename_column("user_prompt", "prompt")
 
     def add_completion(ex: Dict[str, Any]) -> Dict[str, Any]:
-        return {"completion": _build_completion(ex["solution"])}
+        return {
+            "prompt": ex["rendered_string"],
+            "completion": _build_completion(ex["solution"]),
+        }
 
     return ds.map(add_completion)
 
@@ -124,14 +130,14 @@ class LoggingSFTTrainer(SFTTrainer):
         self._last_raw_batch: Dict[str, Any] | None = None
         super().__init__(*args, **kwargs)
 
-    def training_step(self, model, inputs):
+    def training_step(self, model, inputs, num_items_in_batch=None):
         if self.sft_logger is not None:
             raw = {field: inputs.get(field) for field in RAW_LOG_FIELDS}
             self._last_raw_batch = raw
             for field in RAW_LOG_FIELDS:
                 if field in inputs:
                     inputs.pop(field)
-        return super().training_step(model, inputs)
+        return super().training_step(model, inputs, num_items_in_batch=num_items_in_batch)
 
 
 def load_lora_model(lora_overrides: Dict[str, Any] | None = None) -> torch.nn.Module:
@@ -195,15 +201,11 @@ def run_trainer(
         generation_config=SFT_GENERATION_CONFIG,
     )
 
-    def formatting_func(ex: Dict[str, Any]) -> str:
-        return f"{ex['rendered_string']}{ex['completion']}"
-
     trainer = LoggingSFTTrainer(
         model=model,
         processing_class=tokenizer,
         args=training_args,
         train_dataset=dataset,
-        formatting_func=formatting_func,
         sft_logger=sft_logger,
     )
     trainer.data_collator = wrap_data_collator(trainer.data_collator, RAW_LOG_FIELDS)

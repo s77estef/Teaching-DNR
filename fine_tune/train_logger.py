@@ -271,11 +271,10 @@ class RewardLogger:
         return _RewardBatchLogger()
 
 
-def wrap_data_collator(base_collator, raw_fields: Tuple[str, ...]):
+def wrap_data_collator(base_collator, extra_fields: Tuple[str, ...]):
     def wrapped(examples):
-        raw_batch = {field: [ex.get(field) for ex in examples] for field in raw_fields}
-        stripped = [{k: v for k, v in ex.items() if k not in raw_fields} for ex in examples]
-        batch = base_collator(stripped)
+        raw_batch = {field: [ex.get(field) for ex in examples] for field in extra_fields}
+        batch = base_collator(examples)
         batch.update(raw_batch)
         return batch
 
@@ -339,7 +338,7 @@ class SFTLogger:
         model=None,
         tokenizer: AutoTokenizer | None = None,
     ) -> None:
-        raw_prompts = batch.get("prompt")
+        raw_prompts = batch.get("user_prompt") or batch.get("prompt")
         raw_rendered = batch.get("rendered_string")
         raw_solutions = batch.get("solution")
         raw_completions = batch.get("completion")
@@ -377,12 +376,13 @@ class SFTLogger:
                     "solution": _safe_json_value(solution),
                     "completion": _safe_json_value(completion),
                 }
-                if (
-                    self.generate_samples > 0
+                should_generate = (
+                    self.generate_samples != 0
                     and model is not None
                     and tokenizer is not None
-                    and idx < self.generate_samples
-                ):
+                    and (self.generate_samples < 0 or idx < self.generate_samples)
+                )
+                if should_generate:
                     gen_info = self._generate_for_prompt(
                         model, tokenizer, str(rendered_string)
                     )

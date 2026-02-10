@@ -31,6 +31,7 @@ from fine_tune.shared import (
     SYSTEM_PROMPT,
     SYSTEM_PROMPT_FS,
     SYSTEM_PROMPT_NORMATIVE,
+    SYSTEM_PROMPT_NNORMATIVE,
     extract_label_if_any,
     load_wildguard_train_rendered,
     hf_cli_login,
@@ -49,7 +50,7 @@ DEBUG = False
 NORMATIVE = True # changes system prompt for normative reasoning
 
 if NORMATIVE:
-    SYSTEM_PROMPT = SYSTEM_PROMPT_NORMATIVE
+    SYSTEM_PROMPT = SYSTEM_PROMPT_NNORMATIVE
 
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 model_name = MODEL_ID.split("/", 1)[-1]
@@ -279,7 +280,7 @@ def run_trainer(
     start_time = time.time()
     trainer.train()
     elapsed = time.time() - start_time
-    #trainer.train(resume_from_checkpoint="fine_tune/trained_experiments/name_here/checkpoint-1000")
+    trainer.train(resume_from_checkpoint="fine_tune/trained_experiments/Qwen3-4B-SFT-test_20260210_120620/checkpoint-79")
     trainer.save_model(training_args.output_dir)
     final_results = {
         "final_steps": trainer.state.global_step,
