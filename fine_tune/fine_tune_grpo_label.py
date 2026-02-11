@@ -32,6 +32,8 @@ from fine_tune.shared import (
     SYSTEM_PROMPT_FS,
     SYSTEM_PROMPT_NORMATIVE,
     SYSTEM_PROMPT_NNORMATIVE,
+    SYSTEM_PROMPT_TNORMATIVE,
+    SYSTEM_PROMPT_FORMAT,
     extract_label_if_any,
     load_wildguard_train_rendered,
     hf_cli_login,
@@ -50,7 +52,8 @@ DEBUG = False
 NORMATIVE = True # changes system prompt for normative reasoning
 
 if NORMATIVE:
-    SYSTEM_PROMPT = SYSTEM_PROMPT_NNORMATIVE
+    SYSTEM_PROMPT = SYSTEM_PROMPT_TNORMATIVE
+
 
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 model_name = MODEL_ID.split("/", 1)[-1]
@@ -80,7 +83,7 @@ GRPO_TRAINING_CONFIG_C = {
     #"generation_kwargs": {
     #    "do_sample": True,
     #},
-    "max_prompt_length": 337, # 256 + 81 because the normative system prompt is 81 tokens longer
+    "max_prompt_length": 366, # 256 + 81 because the normative system prompt is 81 tokens longer
     "report_to": ["wandb"],
     "logging_steps": 10,
     "save_strategy": "steps",
@@ -169,19 +172,18 @@ def format_reward(completions, **_):
 
 """
 
-# TODO: delete this if i only use think
-REASONING_TAG = "think"
-
 def accuracy_reward(completions, **kwargs):
     # Strict accuracy reward: FULL_RE must match exactly, label must be extractable, label must equal gold
     solutions = kwargs["solution"]
     rewards = []
 
     for completion, solution in zip(completions, solutions):
-        print("COMPLETION:", completion)
+        if DEBUG:
+            print("COMPLETION:", completion)
         text = completion_to_text(completion).strip()
-        print("TEXT:", text)
-        pred = extract_label_if_any(text, reasoning_tag=REASONING_TAG)
+        if DEBUG:
+            print("TEXT:", text)
+        pred = extract_label_if_any(text, include_normative_reasoning=NORMATIVE)
 
         if pred is None:
             rewards.append(0.0)
@@ -191,7 +193,6 @@ def accuracy_reward(completions, **kwargs):
         rewards.append(1.0 if pred == gold else 0.0)
 
     return rewards
-
 
 
 # --------------------------------------------------------- REWARDS
@@ -280,7 +281,7 @@ def run_trainer(
     start_time = time.time()
     trainer.train()
     elapsed = time.time() - start_time
-    trainer.train(resume_from_checkpoint="fine_tune/trained_experiments/Qwen3-4B-SFT-test_20260210_120620/checkpoint-79")
+    #trainer.train(resume_from_checkpoint="fine_tune/trained_experiments/Qwen3-4B-SFT-test_20260210_120620/checkpoint-79")
     trainer.save_model(training_args.output_dir)
     final_results = {
         "final_steps": trainer.state.global_step,
