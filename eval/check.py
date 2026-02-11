@@ -24,6 +24,8 @@ try:
         SYSTEM_PROMPT,
         SYSTEM_PROMPT_NORMATIVE,
         SYSTEM_PROMPT_NNORMATIVE,
+        SYSTEM_PROMPT_TNORMATIVE,
+        SYSTEM_PROMPT_GPT,
         attach_prompts_for_eval,
         hf_cli_login,
         validate_and_extract_label,
@@ -39,6 +41,8 @@ except ImportError:
         SYSTEM_PROMPT,
         SYSTEM_PROMPT_NORMATIVE,
         SYSTEM_PROMPT_NNORMATIVE,
+        SYSTEM_PROMPT_TNORMATIVE,
+        SYSTEM_PROMPT_GPT,
         attach_prompts_for_eval,
         hf_cli_login,
         validate_and_extract_label,
@@ -79,12 +83,7 @@ GENERATION_CONFIG = {
 }
 NORMATIVE = True
 if NORMATIVE:
-    SYSTEM_PROMPT = SYSTEM_PROMPT_NNORMATIVE
-
-
-REASONING_TAG = "think"
-if NORMATIVE:
-    REASONING_TAG = "normative_reasoning"
+    SYSTEM_PROMPT = SYSTEM_PROMPT_TNORMATIVE
 
 
 def check_output(
@@ -174,7 +173,7 @@ def check_output(
         rendered_string, generated_text, dt, tokens = generate_with_reasoning(conversation)
 
         format_ok, pred_label = validate_and_extract_label(
-            generated_text, reasoning_tag=REASONING_TAG
+            generated_text, include_normative_reasoning=NORMATIVE
         )
         gold_label = (example["prompt_harm_label"] or "").lower()
 
