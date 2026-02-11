@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 import json
+import inspect
 import os
 import time
 from datetime import datetime
@@ -38,7 +39,7 @@ TRAIN_SAMPLES = 10000
 #MODEL_ID = "Qwen/Qwen3-4B-Thinking-2507"
 #MODEL_ID = "Qwen/Qwen3-4B-Instruct-2507"
 MODEL_ID = "Qwen/Qwen3-4B"
-DEBUG = False
+DEBUG = True
 NORMATIVE = True
 
 if NORMATIVE:
@@ -57,7 +58,7 @@ SFT_TRAINING_CONFIG = {
     "learning_rate": 1e-5,
     "remove_unused_columns": False,
     "per_device_train_batch_size": 8,
-    "gradient_accumulation_steps": 1,
+    "gradient_accumulation_steps": 16,
     "num_train_epochs": 1,
     "bf16": True,
     "max_length": 256,
@@ -66,6 +67,7 @@ SFT_TRAINING_CONFIG = {
     "logging_steps": 10,
     "save_strategy": "steps",
     "save_steps": 20,
+    "response_template": "<|im_start|>assistant\n",
 }
 SFT_GENERATION_CONFIG = {
     "max_new_tokens": 256,
@@ -94,6 +96,71 @@ LORA_CONFIG: Dict[str, Any] = {
 
 
 RAW_LOG_FIELDS = ("user_prompt", "rendered_string", "solution", "completion")
+_DEBUG_COLLATOR_RAN = False
+
+def debug_sft_batch(
+    dataset: Dataset,
+    tokenizer: AutoTokenizer,
+    *,
+    max_length: int,
+    num_examples: int = 3,
+) -> None:
+    print("=== SFT debug batch ===")
+    print(f"max_length={max_length}, num_examples={num_examples}")
+    for idx in range(min(num_examples, len(dataset))):
+        ex = dataset[idx]
+        prompt = ex.get("prompt", "")
+        completion = ex.get("completion", "")
+        prompt_ids = tokenizer(prompt, add_special_tokens=False)["input_ids"]
+        completion_ids = tokenizer(completion, add_special_tokens=False)["input_ids"]
+        total_len = len(prompt_ids) + len(completion_ids)
+        fits = total_len <= max_length
+        print(f"\nexample[{idx}]")
+        print(f"prompt_len={len(prompt_ids)} completion_len={len(completion_ids)} total={total_len}")
+        print(f"completion_fits={fits}")
+        if not fits:
+            # Estimate how many completion tokens survive after truncation.
+            remaining = max(0, max_length - len(prompt_ids))
+            print(f"completion_tokens_remaining_after_truncation={remaining}")
+        # Basic sanity: ensure prompt ends with assistant tag if using chat template.
+        tail = prompt[-80:].replace("\n", "\\n")
+        print(f"prompt_tail={tail}")
+
+
+def debug_collator_wrap(base_collator, tokenizer: AutoTokenizer, *, max_examples: int = 2):
+    def wrapped(examples):
+        global _DEBUG_COLLATOR_RAN
+        batch = base_collator(examples)
+        if DEBUG and not _DEBUG_COLLATOR_RAN:
+            _DEBUG_COLLATOR_RAN = True
+            input_ids = batch.get("input_ids")
+            labels = batch.get("labels")
+            print("=== SFT debug collator ===")
+            if input_ids is None or labels is None:
+                print("missing input_ids or labels in batch")
+                return batch
+            for i in range(min(max_examples, input_ids.shape[0])):
+                ids = input_ids[i].tolist()
+                lbl = labels[i].tolist()
+                supervised = [idx for idx, v in enumerate(lbl) if v != -100]
+                print(f"\nexample[{i}]")
+                print(f"supervised_token_count={len(supervised)} total_tokens={len(ids)}")
+                if not supervised:
+                    continue
+                start = supervised[0]
+                end = supervised[-1] + 1
+                prefix = tokenizer.decode(ids[:start], skip_special_tokens=False)
+                span = tokenizer.decode(ids[start:end], skip_special_tokens=False)
+                suffix = tokenizer.decode(ids[end:], skip_special_tokens=False)
+                prefix_tail = prefix[-80:].replace("\n", "\\n")
+                span_preview = span[:160].replace("\n", "\\n")
+                suffix_head = suffix[:80].replace("\n", "\\n")
+                print(f"supervised_start_idx={start} supervised_end_idx={end - 1}")
+                print(f"prefix_tail={prefix_tail}")
+                print(f"span_preview={span_preview}")
+                print(f"suffix_head={suffix_head}")
+        return batch
+    return wrapped
 
 
 def _build_completion(label: str) -> str:
@@ -142,7 +209,7 @@ class LoggingSFTTrainer(SFTTrainer):
 
 def load_lora_model(lora_overrides: Dict[str, Any] | None = None) -> torch.nn.Module:
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    dtype = torch.float16 if device == "cuda" else torch.float32
+    dtype = torch.bfloat16 if device == "cuda" else torch.float32
     base = AutoModelForCausalLM.from_pretrained(
         MODEL_ID,
         torch_dtype=dtype,
@@ -158,7 +225,10 @@ def load_lora_model(lora_overrides: Dict[str, Any] | None = None) -> torch.nn.Mo
 
 
 def build_training_args() -> SFTConfig:
-    return SFTConfig(**SFT_TRAINING_CONFIG)
+    # Filter out keys not supported by this TRL version.
+    params = inspect.signature(SFTConfig).parameters
+    filtered = {k: v for k, v in SFT_TRAINING_CONFIG.items() if k in params}
+    return SFTConfig(**filtered)
 
 # only for training documentation
 def _write_sft_config(config: Dict[str, Any], output_dir: str, results: Dict[str, Any] | None = None) -> Path:
@@ -188,6 +258,13 @@ def run_trainer(
 ) -> SFTTrainer:
     tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, padding_side="right")
     tokenizer.pad_token = tokenizer.eos_token
+    if DEBUG:
+        debug_sft_batch(
+            dataset,
+            tokenizer,
+            max_length=int(training_args.max_length),
+            num_examples=3,
+        )
 
     config_for_log = copy.deepcopy(training_config or SFT_TRAINING_CONFIG)
     _write_sft_config(config_for_log, training_args.output_dir)
@@ -209,6 +286,8 @@ def run_trainer(
         sft_logger=sft_logger,
     )
     trainer.data_collator = wrap_data_collator(trainer.data_collator, RAW_LOG_FIELDS)
+    if DEBUG:
+        trainer.data_collator = debug_collator_wrap(trainer.data_collator, tokenizer)
     trainer.add_callback(sft_logger.get_callback(trainer))
     start_time = time.time()
     trainer.train()
