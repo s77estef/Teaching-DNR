@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 import json
-import inspect
 import os
 import time
 from datetime import datetime
@@ -8,6 +7,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Tuple
 import copy
 import wandb
+import sys
 
 import torch
 from datasets import Dataset, load_dataset
@@ -17,33 +17,28 @@ from transformers import AutoTokenizer, AutoModelForCausalLM
 from trl import SFTConfig, SFTTrainer
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-if str(PROJECT_ROOT) not in os.sys.path:
-    os.sys.path.append(str(PROJECT_ROOT))
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.append(str(PROJECT_ROOT))
 
 from fine_tune.shared import (
     SYSTEM_PROMPT,
     SYSTEM_PROMPT_FS,
     SYSTEM_PROMPT_NORMATIVE,
     SYSTEM_PROMPT_NNORMATIVE,
+    extract_label_if_any,
     load_wildguard_train_rendered,
+    load_wildguard_train,
     hf_cli_login,
     wandb_cli_login,
 )
-from fine_tune.train_logger import SFTLogger, wrap_data_collator
-
-
 # ---- config settings ----
 
-TRAIN_SAMPLES = 10000
+TRAIN_SAMPLES = 100
 #MODEL_ID = "Qwen/Qwen2-0.5B-Instruct"
 #MODEL_ID = "Qwen/Qwen3-4B-Thinking-2507"
 #MODEL_ID = "Qwen/Qwen3-4B-Instruct-2507"
 MODEL_ID = "Qwen/Qwen3-4B"
-DEBUG = True
-NORMATIVE = True
-
-if NORMATIVE:
-    SYSTEM_PROMPT = SYSTEM_PROMPT_NNORMATIVE
+DEBUG = False
 
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 model_name = MODEL_ID.split("/", 1)[-1]
@@ -66,14 +61,8 @@ SFT_TRAINING_CONFIG = {
     "report_to": ["wandb"],
     "logging_steps": 10,
     "save_strategy": "steps",
-    "save_steps": 20,
-    "response_template": "<|im_start|>assistant\n",
+    "save_steps": 25,
 }
-SFT_GENERATION_CONFIG = {
-    "max_new_tokens": 256,
-    "temperature": 0.6,
-}
-SFT_LOG_GENERATION_SAMPLES = -1
 
 LORA_CONFIG: Dict[str, Any] = {
     "task_type": "CAUSAL_LM",
@@ -95,121 +84,26 @@ LORA_CONFIG: Dict[str, Any] = {
 # ------------------------------------
 
 
-RAW_LOG_FIELDS = ("user_prompt", "rendered_string", "solution", "completion")
-_DEBUG_COLLATOR_RAN = False
-
-def debug_sft_batch(
-    dataset: Dataset,
-    tokenizer: AutoTokenizer,
-    *,
-    max_length: int,
-    num_examples: int = 3,
-) -> None:
-    print("=== SFT debug batch ===")
-    print(f"max_length={max_length}, num_examples={num_examples}")
-    for idx in range(min(num_examples, len(dataset))):
-        ex = dataset[idx]
-        prompt = ex.get("prompt", "")
-        completion = ex.get("completion", "")
-        prompt_ids = tokenizer(prompt, add_special_tokens=False)["input_ids"]
-        completion_ids = tokenizer(completion, add_special_tokens=False)["input_ids"]
-        total_len = len(prompt_ids) + len(completion_ids)
-        fits = total_len <= max_length
-        print(f"\nexample[{idx}]")
-        print(f"prompt_len={len(prompt_ids)} completion_len={len(completion_ids)} total={total_len}")
-        print(f"completion_fits={fits}")
-        if not fits:
-            # Estimate how many completion tokens survive after truncation.
-            remaining = max(0, max_length - len(prompt_ids))
-            print(f"completion_tokens_remaining_after_truncation={remaining}")
-        # Basic sanity: ensure prompt ends with assistant tag if using chat template.
-        tail = prompt[-80:].replace("\n", "\\n")
-        print(f"prompt_tail={tail}")
-
-
-def debug_collator_wrap(base_collator, tokenizer: AutoTokenizer, *, max_examples: int = 2):
-    def wrapped(examples):
-        global _DEBUG_COLLATOR_RAN
-        batch = base_collator(examples)
-        if DEBUG and not _DEBUG_COLLATOR_RAN:
-            _DEBUG_COLLATOR_RAN = True
-            input_ids = batch.get("input_ids")
-            labels = batch.get("labels")
-            print("=== SFT debug collator ===")
-            if input_ids is None or labels is None:
-                print("missing input_ids or labels in batch")
-                return batch
-            for i in range(min(max_examples, input_ids.shape[0])):
-                ids = input_ids[i].tolist()
-                lbl = labels[i].tolist()
-                supervised = [idx for idx, v in enumerate(lbl) if v != -100]
-                print(f"\nexample[{i}]")
-                print(f"supervised_token_count={len(supervised)} total_tokens={len(ids)}")
-                if not supervised:
-                    continue
-                start = supervised[0]
-                end = supervised[-1] + 1
-                prefix = tokenizer.decode(ids[:start], skip_special_tokens=False)
-                span = tokenizer.decode(ids[start:end], skip_special_tokens=False)
-                suffix = tokenizer.decode(ids[end:], skip_special_tokens=False)
-                prefix_tail = prefix[-80:].replace("\n", "\\n")
-                span_preview = span[:160].replace("\n", "\\n")
-                suffix_head = suffix[:80].replace("\n", "\\n")
-                print(f"supervised_start_idx={start} supervised_end_idx={end - 1}")
-                print(f"prefix_tail={prefix_tail}")
-                print(f"span_preview={span_preview}")
-                print(f"suffix_head={suffix_head}")
-        return batch
-    return wrapped
-
-
-def _build_completion(label: str) -> str:
-    label = (label or "").lower()
-    if label not in {"harmful", "unharmful"}:
-        raise ValueError(f"Unexpected prompt_harm_label: {label}")
-    completion = f"<think></think><answer>{label}</answer>"
-    if NORMATIVE:
-        completion = f"<normative_reasoning></normative_reasoning><answer>{label}</answer>"
-    return completion
-
-
-def prepare_sft_dataset() -> Dataset:
-    ds = load_wildguard_train_rendered(
-        num_samples=TRAIN_SAMPLES,
-        max_prompt_tokens=SFT_TRAINING_CONFIG["max_length"],
-        tokenizer_name=MODEL_ID,
-        system_prompt=SYSTEM_PROMPT,
-    )
-    ds = ds.rename_column("prompt", "rendered_string")
-
-    def add_completion(ex: Dict[str, Any]) -> Dict[str, Any]:
+def attach_prompts(dataset: Dataset) -> Dataset:
+    def make_conversation(example: Dict) -> Dict[str, List[Dict[str, str]]]:
+        label = example["prompt_harm_label"].lower()
+        if label not in {"harmful", "unharmful"}:
+            raise ValueError(f"Unexpected prompt_harm_label: {label}")
         return {
-            "prompt": ex["rendered_string"],
-            "completion": _build_completion(ex["solution"]),
+            "prompt": [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": example["prompt"]},
+            ],
+            "completion": [
+                {"role": "assistant", "content": f"<think></think><answer>{label}</answer>"}
+            ],
         }
-
-    return ds.map(add_completion)
-
-
-class LoggingSFTTrainer(SFTTrainer):
-    def __init__(self, *args, sft_logger: SFTLogger | None = None, **kwargs) -> None:
-        self.sft_logger = sft_logger
-        self._last_raw_batch: Dict[str, Any] | None = None
-        super().__init__(*args, **kwargs)
-
-    def training_step(self, model, inputs, num_items_in_batch=None):
-        if self.sft_logger is not None:
-            raw = {field: inputs.get(field) for field in RAW_LOG_FIELDS}
-            self._last_raw_batch = raw
-            for field in RAW_LOG_FIELDS:
-                if field in inputs:
-                    inputs.pop(field)
-        return super().training_step(model, inputs, num_items_in_batch=num_items_in_batch)
+    return dataset.map(make_conversation, remove_columns=["prompt_harm_label"])
 
 
 def load_lora_model(lora_overrides: Dict[str, Any] | None = None) -> torch.nn.Module:
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    dtype = torch.bfloat16 if device == "cuda" else torch.float32
+    dtype = torch.float16 if device == "cuda" else torch.float32
     base = AutoModelForCausalLM.from_pretrained(
         MODEL_ID,
         torch_dtype=dtype,
@@ -225,10 +119,7 @@ def load_lora_model(lora_overrides: Dict[str, Any] | None = None) -> torch.nn.Mo
 
 
 def build_training_args() -> SFTConfig:
-    # Filter out keys not supported by this TRL version.
-    params = inspect.signature(SFTConfig).parameters
-    filtered = {k: v for k, v in SFT_TRAINING_CONFIG.items() if k in params}
-    return SFTConfig(**filtered)
+    return SFTConfig(**SFT_TRAINING_CONFIG)
 
 # only for training documentation
 def _write_sft_config(config: Dict[str, Any], output_dir: str, results: Dict[str, Any] | None = None) -> Path:
@@ -256,39 +147,19 @@ def run_trainer(
     training_args: SFTConfig,
     training_config: Dict[str, Any] | None = None,
 ) -> SFTTrainer:
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, padding_side="right")
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, padding_side="left")
     tokenizer.pad_token = tokenizer.eos_token
-    if DEBUG:
-        debug_sft_batch(
-            dataset,
-            tokenizer,
-            max_length=int(training_args.max_length),
-            num_examples=3,
-        )
 
     config_for_log = copy.deepcopy(training_config or SFT_TRAINING_CONFIG)
     _write_sft_config(config_for_log, training_args.output_dir)
 
-    save_steps = training_args.save_steps or SFT_TRAINING_CONFIG.get("save_steps")
-    sft_logger = SFTLogger(
-        system_prompt=SYSTEM_PROMPT,
-        output_dir=training_args.output_dir,
-        save_steps=save_steps,
-        generate_samples=SFT_LOG_GENERATION_SAMPLES,
-        generation_config=SFT_GENERATION_CONFIG,
-    )
-
-    trainer = LoggingSFTTrainer(
+    trainer = SFTTrainer(
         model=model,
         processing_class=tokenizer,
         args=training_args,
         train_dataset=dataset,
-        sft_logger=sft_logger,
+        #formatting_func=conversation_formatter,
     )
-    trainer.data_collator = wrap_data_collator(trainer.data_collator, RAW_LOG_FIELDS)
-    if DEBUG:
-        trainer.data_collator = debug_collator_wrap(trainer.data_collator, tokenizer)
-    trainer.add_callback(sft_logger.get_callback(trainer))
     start_time = time.time()
     trainer.train()
     #trainer.train(resume_from_checkpoint="fine_tune/trained_experiments/name_here/checkpoint-1000")
@@ -305,7 +176,8 @@ def run_trainer(
 def main() -> None:
     hf_cli_login()
     wandb_cli_login()
-    train_ds = prepare_sft_dataset()
+    train_ds = load_wildguard_train(num_samples=TRAIN_SAMPLES)
+    train_ds = attach_prompts(train_ds)
     print(train_ds)
 
     model = load_lora_model()
