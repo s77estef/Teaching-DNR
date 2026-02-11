@@ -23,6 +23,7 @@ try:
     from ..fine_tune.shared import (
         SYSTEM_PROMPT,
         SYSTEM_PROMPT_NORMATIVE,
+        SYSTEM_PROMPT_NNORMATIVE,
         attach_prompts_for_eval,
         hf_cli_login,
         validate_and_extract_label,
@@ -37,6 +38,7 @@ except ImportError:
     from fine_tune.shared import (
         SYSTEM_PROMPT,
         SYSTEM_PROMPT_NORMATIVE,
+        SYSTEM_PROMPT_NNORMATIVE,
         attach_prompts_for_eval,
         hf_cli_login,
         validate_and_extract_label,
@@ -48,8 +50,8 @@ except ImportError:
 
 MODEL_ID = "Qwen/Qwen3-4B"
 # max non-Null: 1699
-PRINT_SAMPLES = 1699
-TEST_SAMPLES = 1699
+PRINT_SAMPLES = 10
+TEST_SAMPLES = 10
 
 ADAPTER_PATH = None
 #ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-test_20251205_164937_195803_merged/checkpoint-3000"
@@ -59,7 +61,7 @@ ADAPTER_PATH = None
 #ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-SFT-sweep_ancient-sweep-19/checkpoint-157"
 #ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-SFT-sweep_youthful-terrain-41/checkpoint-157"
 #ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-SFT-sweep_ethereal-sweep-5/checkpoint-157"
-ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-test_20251218_180547-6/checkpoint-625"
+#ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-test_20251218_180547-6/checkpoint-625"
 #ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-test_20260106_180254/checkpoint-225"
 #ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-test_20260107_132438/checkpoint-175"
 #ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-test_20260108_055324/checkpoint-100"
@@ -67,7 +69,7 @@ ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-test_20251218_
 #ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-test_20260123_164321-123-512/checkpoint-1025"
 #ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-test_20260127_213505-133/checkpoint-1250"
 #ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-test_20260204_191019-138/checkpoint-450"
-
+ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-SFT-test_20260210_143755/checkpoint-20"
 
 
 DATASET_KEY = "wildguardmix_test"
@@ -77,10 +79,12 @@ GENERATION_CONFIG = {
 }
 NORMATIVE = True
 if NORMATIVE:
-    SYSTEM_PROMPT = SYSTEM_PROMPT_NORMATIVE
+    SYSTEM_PROMPT = SYSTEM_PROMPT_NNORMATIVE
 
 
 REASONING_TAG = "think"
+if NORMATIVE:
+    REASONING_TAG = "normative_reasoning"
 
 
 def check_output(

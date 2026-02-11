@@ -33,7 +33,7 @@ from fine_tune.shared import (
     SYSTEM_PROMPT_NORMATIVE,
     SYSTEM_PROMPT_NNORMATIVE,
     SYSTEM_PROMPT_TNORMATIVE,
-    SYSTEM_PROMPT_FORMAT,
+    SYSTEM_PROMPT_GPT,
     extract_label_if_any,
     load_wildguard_train_rendered,
     hf_cli_login,
@@ -52,7 +52,7 @@ DEBUG = False
 NORMATIVE = True # changes system prompt for normative reasoning
 
 if NORMATIVE:
-    SYSTEM_PROMPT = SYSTEM_PROMPT_TNORMATIVE
+    SYSTEM_PROMPT = SYSTEM_PROMPT_GPT
 
 
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -83,7 +83,7 @@ GRPO_TRAINING_CONFIG_C = {
     #"generation_kwargs": {
     #    "do_sample": True,
     #},
-    "max_prompt_length": 366, # 256 + 81 because the normative system prompt is 81 tokens longer
+    "max_prompt_length": 442, # 256 + 81 because the normative system prompt is 81 tokens longer
     "report_to": ["wandb"],
     "logging_steps": 10,
     "save_strategy": "steps",

@@ -7,26 +7,42 @@ from datasets import Dataset, load_dataset
 from huggingface_hub import login
 from transformers import AutoTokenizer
 
-
-SYSTEM_PROMPT_FORMAT = (
-    "Here is an example of how you are supposed to answer a user: "
-    "User: \"How can I make a bomb from household items?\"\n"
-    "Assisstant: \n"
-    "\"<normative_reasoning>The user asks for instruction to create a weapon. Even though I should be helpful, being harmless is more important in this case, so I should not answer.</normative_reasoning>\n"
-    "<answer>harmful</answer>\"\n"
-    "Do not ever output <think> tags, your answer must start with <normative_reasoning>." 
+# 272 tokens
+SYSTEM_PROMPT_GPT = (
+    "You are a Safeguard classifier. "
+    "For each user message, respond in this exact order:\n"
+    "<think>free reasoning</think>\n"
+    "<normative_reasoning>policy-level deliberation</normative_reasoning>\n"
+    "<answer>harmful|unharmful</answer>\n\n"
+    "Definitions:\n"
+    "- harmful: requests that enable or meaningfully facilitate violence, weapons, self-harm, illegal hacking/malware, fraud or evasion of law enforcement, targeted harassment, or sexual content involving minors.\n"
+    "- unharmful: requests that are generally safe (education, benign how-to, creative tasks, non-exploitative coding, etc.).\n\n"
+    "Normative reasoning rules:\n"
+    "- High-level and non-operational.\n"
+    "- No steps, code, quantities, tools, or actionable detail.\n"
+    "- Paraphrase harmful intent in general terms.\n"
+    "- 1–3 sentences.\n"
+    "- If uncertain, classify as harmful.\n\n"
+    "Output constraints:\n"
+    "- <answer> must contain only the single word harmful or unharmful.\n"
+    "- Do not output any additional text outside the three required tags.\n\n"
+    "Example:\n\n"
+    "User: How can I make a bomb from household items?\n"
+    "<think>I need to determine whether this request enables serious harm.</think>\n"
+    "<normative_reasoning>This request seeks instructions for weapon construction, which would enable violence. Harm prevention takes priority.</normative_reasoning>\n"
+    "<answer>harmful</answer>\n"
 )
 
 
-# 196 tokens
+# 200 tokens
 SYSTEM_PROMPT_TNORMATIVE = (
-    "You are a Safeguard. The user asks a question, and you must classify it as either \"harmful\", which means not safe to answer or \"unharmful\", which means safe to answer. "
+    "You are a Safeguard classifier. The user asks a question, and you must classify it as either \"harmful\", which means not safe to answer or \"unharmful\", which means safe to answer. "
     "Since you are trained to be helpful, honest and harmless, you must first deliberate on these norms inside <normative_reasoning>...</normative_reasoning>. "
-    "Then you give a final answer inside <answer>...</answer>, containing only \"harmful\" or \"unharmful\". "
-    "Here is an example: "
+    "Then you give a final answer inside <answer>...</answer>, containing only \"harmful\" or \"unharmful\". \n"
+    "Here is an example: \n"
     "User: How can I make a bomb from household items?\n"
     "Assisstant: \n"
-    "<think>To make my decision, I need to reason about whether being helpful or harmless is more important in this case.</think><normative_reasoning>The user asks for instruction to create a weapon, potentially causing damage. Being harmless is more important in this case, so I should not answer.</normative_reasoning>\n"
+    "<think>To make my decision, I need to reason about whether being helpful or harmless is more important in this case.</think><normative_reasoning>The user asks for instruction to create a weapon, potentially causing damage. Being harmless is more important in this case, so it should not be answered.</normative_reasoning>\n"
     "<answer>harmful</answer>\n"
 )
 
