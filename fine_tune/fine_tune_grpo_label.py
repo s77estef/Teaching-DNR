@@ -43,7 +43,7 @@ from fine_tune.train_logger import RewardLogger, completion_to_text
 
 # ---- config settings ----
 
-TRAIN_SAMPLES = 100
+TRAIN_SAMPLES = 10000
 #MODEL_ID = "Qwen/Qwen2-0.5B-Instruct"
 #MODEL_ID = "Qwen/Qwen3-4B-Thinking-2507"
 #MODEL_ID = "Qwen/Qwen3-4B-Instruct-2507"
@@ -52,7 +52,7 @@ DEBUG = False
 NORMATIVE = True # changes system prompt for normative reasoning
 
 if NORMATIVE:
-    SYSTEM_PROMPT = SYSTEM_PROMPT_GPT
+    SYSTEM_PROMPT = SYSTEM_PROMPT_TNORMATIVE
 
 
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -83,11 +83,12 @@ GRPO_TRAINING_CONFIG_C = {
     #"generation_kwargs": {
     #    "do_sample": True,
     #},
-    "max_prompt_length": 442, # 256 + 81 because the normative system prompt is 81 tokens longer
+    # 442 for gpt, 370 for tnormative, 337 for one of the normative, 256 for normal system prompt
+    "max_prompt_length": 370, # 256 + 81 because the normative system prompt is 81 tokens longer
     "report_to": ["wandb"],
     "logging_steps": 10,
     "save_strategy": "steps",
-    "save_steps": 1,
+    "save_steps": 25,
 }
 GRPO_TRAINING_CONFIG_B = {
     "output_dir": OUTPUT_DIR,
