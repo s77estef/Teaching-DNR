@@ -1,3 +1,6 @@
+# new sys prompt: import, NORMATIVE=, prompt length, adjust check.py
+
+
 #!/usr/bin/env python
 import json
 import os
@@ -33,7 +36,7 @@ from fine_tune.shared import (
     SYSTEM_PROMPT_NORMATIVE,
     SYSTEM_PROMPT_NNORMATIVE,
     SYSTEM_PROMPT_TNORMATIVE,
-    SYSTEM_PROMPT_GPT,
+    SYSTEM_PROMPT_GPT2,
     extract_label_if_any,
     load_wildguard_train_rendered,
     hf_cli_login,
@@ -52,7 +55,7 @@ DEBUG = False
 NORMATIVE = True # changes system prompt for normative reasoning
 
 if NORMATIVE:
-    SYSTEM_PROMPT = SYSTEM_PROMPT_TNORMATIVE
+    SYSTEM_PROMPT = SYSTEM_PROMPT_GPT2
 
 
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -67,6 +70,7 @@ REWARD_SOURCE_FILENAME = "reward_funcs.py"
 GRPO_TRAINING_CONFIG_C = {
     "output_dir": OUTPUT_DIR,
     "learning_rate": 1e-5,
+    "beta": 0.025,
     "remove_unused_columns": False,
     "per_device_train_batch_size": 2,
     "gradient_accumulation_steps": 16,
@@ -84,7 +88,7 @@ GRPO_TRAINING_CONFIG_C = {
     #    "do_sample": True,
     #},
     # 442 for gpt, 370 for tnormative, 337 for one of the normative, 256 for normal system prompt
-    "max_prompt_length": 370, # 256 + 81 because the normative system prompt is 81 tokens longer
+    "max_prompt_length": 487, # 256 + 81 because the normative system prompt is 81 tokens longer
     "report_to": ["wandb"],
     "logging_steps": 10,
     "save_strategy": "steps",

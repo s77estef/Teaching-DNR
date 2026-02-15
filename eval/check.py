@@ -42,7 +42,7 @@ except ImportError:
         SYSTEM_PROMPT_NORMATIVE,
         SYSTEM_PROMPT_NNORMATIVE,
         SYSTEM_PROMPT_TNORMATIVE,
-        SYSTEM_PROMPT_GPT,
+        SYSTEM_PROMPT_GPT2,
         attach_prompts_for_eval,
         hf_cli_login,
         validate_and_extract_label,
@@ -74,7 +74,8 @@ ADAPTER_PATH = None
 #ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-test_20260127_213505-133/checkpoint-1250"
 #ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-test_20260204_191019-138/checkpoint-450"
 #ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-SFT-test_20260210_143755/checkpoint-20"
-ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-test_20260211_181203-181/checkpoint-1000"
+#ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-test_20260211_181203-181/checkpoint-1000"
+ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-test_20260212_205727-182/checkpoint-800"
 
 
 
@@ -85,7 +86,7 @@ GENERATION_CONFIG = {
 }
 NORMATIVE = True
 if NORMATIVE:
-    SYSTEM_PROMPT = SYSTEM_PROMPT_TNORMATIVE
+    SYSTEM_PROMPT = SYSTEM_PROMPT_GPT2
 
 
 def check_output(
