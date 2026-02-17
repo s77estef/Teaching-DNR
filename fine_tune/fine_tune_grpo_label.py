@@ -36,7 +36,7 @@ from fine_tune.shared import (
     SYSTEM_PROMPT_NORMATIVE,
     SYSTEM_PROMPT_NNORMATIVE,
     SYSTEM_PROMPT_TNORMATIVE,
-    SYSTEM_PROMPT_GPT2,
+    SYSTEM_PROMPT_GPT3,
     extract_label_if_any,
     load_wildguard_train_rendered,
     hf_cli_login,
@@ -52,10 +52,10 @@ TRAIN_SAMPLES = 10000
 #MODEL_ID = "Qwen/Qwen3-4B-Instruct-2507"
 MODEL_ID = "Qwen/Qwen3-4B"
 DEBUG = False
-NORMATIVE = True # changes system prompt for normative reasoning
+NORMATIVE = False # changes system prompt for normative reasoning
 
 if NORMATIVE:
-    SYSTEM_PROMPT = SYSTEM_PROMPT_GPT2
+    SYSTEM_PROMPT = SYSTEM_PROMPT
 
 
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -87,8 +87,8 @@ GRPO_TRAINING_CONFIG_C = {
     #"generation_kwargs": {
     #    "do_sample": True,
     #},
-    # 442 for gpt, 370 for tnormative, 337 for one of the normative, 256 for normal system prompt
-    "max_prompt_length": 487, # 256 + 81 because the normative system prompt is 81 tokens longer
+    # 713 for gpt3?, 487 for gpt2, 442 for gpt, 370 for tnormative, 337 for one of the normative, 256 for normal system prompt
+    "max_prompt_length": 588, # 256 + 81 because the normative system prompt is 81 tokens longer
     "report_to": ["wandb"],
     "logging_steps": 10,
     "save_strategy": "steps",
