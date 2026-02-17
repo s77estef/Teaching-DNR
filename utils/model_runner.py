@@ -48,13 +48,35 @@ class GenerativeModelRunner:
         )
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
+        eos_token_id = self._build_eos_token_ids()
         self.generation_config = GenerationConfig(
             max_new_tokens=config.max_new_tokens,
             temperature=config.temperature,
             top_p=config.top_p,
-            eos_token_id=self.tokenizer.eos_token_id,
+            eos_token_id=eos_token_id,
             pad_token_id=self.tokenizer.pad_token_id,
         )
+
+    def _build_eos_token_ids(self):
+        eos_ids = []
+        if self.tokenizer.eos_token_id is not None:
+            eos_ids.append(int(self.tokenizer.eos_token_id))
+
+        im_end_id = self.tokenizer.convert_tokens_to_ids("<|im_end|>")
+        if (
+            isinstance(im_end_id, int)
+            and im_end_id >= 0
+            and im_end_id != self.tokenizer.unk_token_id
+        ):
+            eos_ids.append(im_end_id)
+
+        # Keep stable ordering while removing duplicates.
+        unique_ids = list(dict.fromkeys(eos_ids))
+        if not unique_ids:
+            return None
+        if len(unique_ids) == 1:
+            return unique_ids[0]
+        return unique_ids
 
     # make prompt
     def _prepare_prompt(self, prompt: str) -> str:
@@ -78,7 +100,10 @@ class GenerativeModelRunner:
                 **inputs,
                 generation_config=self.generation_config,
             )
-        generated = self.tokenizer.decode(output_ids[0][inputs["input_ids"].shape[-1] :])
+        generated = self.tokenizer.decode(
+            output_ids[0][inputs["input_ids"].shape[-1] :],
+            skip_special_tokens=True,
+        )
         return generated.strip()
 
     def batch_generate(self, prompts: Iterable[str]) -> Iterable[str]:
