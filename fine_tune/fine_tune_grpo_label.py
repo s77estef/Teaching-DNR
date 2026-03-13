@@ -1,4 +1,4 @@
-# new sys prompt: import, NORMATIVE=, prompt length, adjust check.py
+# new sys prompt: import, NORMATIVE=True/False, SYSTEM_PROMPT=, prompt length, adjust check.py
 
 
 #!/usr/bin/env python
@@ -37,6 +37,7 @@ from fine_tune.shared import (
     SYSTEM_PROMPT_NNORMATIVE,
     SYSTEM_PROMPT_TNORMATIVE,
     SYSTEM_PROMPT_GPT3,
+    SYSTEM_PROMPT_NEWNNORMATIVE,
     extract_label_if_any,
     load_wildguard_train_rendered,
     hf_cli_login,
@@ -52,10 +53,10 @@ TRAIN_SAMPLES = 10000
 #MODEL_ID = "Qwen/Qwen3-4B-Instruct-2507"
 MODEL_ID = "Qwen/Qwen3-4B"
 DEBUG = False
-NORMATIVE = False # changes system prompt for normative reasoning
+NORMATIVE = True # changes system prompt for normative reasoning
 
 if NORMATIVE:
-    SYSTEM_PROMPT = SYSTEM_PROMPT
+    SYSTEM_PROMPT = SYSTEM_PROMPT_GPT3
 
 
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -88,7 +89,7 @@ GRPO_TRAINING_CONFIG_C = {
     #    "do_sample": True,
     #},
     # 713 for gpt3?, 487 for gpt2, 442 for gpt, 370 for tnormative, 337 for one of the normative, 256 for normal system prompt
-    "max_prompt_length": 588, # 256 + 81 because the normative system prompt is 81 tokens longer
+    "max_prompt_length": 1024, # 256 + 81 because the normative system prompt is 81 tokens longer
     "report_to": ["wandb"],
     "logging_steps": 10,
     "save_strategy": "steps",
