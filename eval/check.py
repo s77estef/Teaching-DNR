@@ -168,6 +168,9 @@ def check_output(
 
     label_matches = 0
     format_matches = 0
+    adversarial_samples = 0
+    adversarial_label_matches = 0
+    adversarial_format_matches = 0
     reported = []
     wrong_label_samples = []
     wrong_format_samples = []
@@ -187,6 +190,12 @@ def check_output(
 
         label_matches += int(matches)
         format_matches += int(format_ok)
+
+        is_adversarial = bool(example.get("adversarial") is True)
+        if is_adversarial:
+            adversarial_samples += 1
+            adversarial_label_matches += int(matches)
+            adversarial_format_matches += int(format_ok)
 
         sample_entry = {
             "sample_id": example.get("sample_id", idx),
@@ -217,6 +226,12 @@ def check_output(
 
     accuracy = label_matches / total_samples if total_samples else 0.0
     format_accuracy = format_matches / total_samples if total_samples else 0.0
+    adversarial_accuracy = (
+        adversarial_label_matches / adversarial_samples if adversarial_samples else 0.0
+    )
+    adversarial_format_accuracy = (
+        adversarial_format_matches / adversarial_samples if adversarial_samples else 0.0
+    )
 
     adapter_meta = str(adapter_path) if adapter_path is not None else None
 
@@ -238,6 +253,8 @@ def check_output(
                 # "Label accuracy" is gated by format correctness, like training reward
                 "label_accuracy": accuracy,
                 "format_accuracy": format_accuracy,
+                "label_accuracy_adversarial": adversarial_accuracy,
+                "format_accuracy_adversarial": adversarial_format_accuracy,
             },
             "timestamp_utc": timestamp,
         },
