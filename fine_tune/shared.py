@@ -304,13 +304,17 @@ def load_wildguard_train(
     num_samples: int = 86759, # TODO remove hardcoded max numbers
     max_tokens: int | None = 3706,
     tokenizer_name: str = "Qwen/Qwen3-4B",
+    only_adversarial: bool = False,
 ) -> Dataset:
     train = load_dataset(
         "allenai/wildguardmix",
         "wildguardtrain",
         split="train",
-        columns=["prompt", "prompt_harm_label"],
+        columns=["prompt", "prompt_harm_label", "adversarial"],
     )
+
+    if only_adversarial:
+        train = train.filter(lambda ex: ex["adversarial"] is True)
 
     if max_tokens is not None:
         tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
@@ -333,13 +337,19 @@ def load_wildguard_train_rendered(
     max_prompt_tokens: int | None = None,
     tokenizer_name: str = "Qwen/Qwen3-4B",
     system_prompt: str,
+    only_adversarial: bool = False,
 ) -> Dataset:
     ds = load_dataset(
         "allenai/wildguardmix",
         "wildguardtrain",
         split="train",
-        columns=["prompt", "prompt_harm_label"],
-    ).shuffle(seed=seed)
+        columns=["prompt", "prompt_harm_label", "adversarial"],
+    )
+
+    if only_adversarial:
+        ds = ds.filter(lambda ex: ex["adversarial"] is True)
+
+    ds = ds.shuffle(seed=seed)
 
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, use_fast=True)
     tokenizer.pad_token = tokenizer.eos_token

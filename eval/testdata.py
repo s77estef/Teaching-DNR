@@ -39,14 +39,17 @@ def load_wildguardmix_test(
     *,
     num_samples: int = 1699,
     seed: int = 42,
+    only_adversarial: bool = False,
 ) -> Tuple[Dataset, Dict[str, Any]]:
     ds = load_dataset(
         "allenai/wildguardmix",
         "wildguardtest",
         split="test",
-        columns=["prompt", "prompt_harm_label"],
+        columns=["prompt", "prompt_harm_label", "adversarial"],
     )
     ds = ds.filter(lambda ex: ex["prompt_harm_label"] is not None)
+    if only_adversarial:
+        ds = ds.filter(lambda ex: ex["adversarial"] is True)
     ds = ds.shuffle(seed=seed)
     ds = _select_num_samples(ds, num_samples)
     info = _dataset_info(
@@ -54,6 +57,7 @@ def load_wildguardmix_test(
         config="wildguardtest",
         split="test",
         sample_limit=num_samples,
+        only_adversarial=only_adversarial,
     )
     return ds, info
 
@@ -116,12 +120,16 @@ def get_test_dataset(
     *,
     num_samples: int,
     seed: int = 42,
+    only_adversarial: bool = False,
 ) -> Tuple[Dataset, Dict[str, Any]]:
     try:
         loader = REGISTRY[key]
     except KeyError as exc:
         available = ", ".join(sorted(REGISTRY))
         raise ValueError(f"Unknown dataset key: {key}. Available: {available}") from exc
-    ds, info = loader(num_samples=num_samples, seed=seed)
+    loader_kwargs = {"num_samples": num_samples, "seed": seed}
+    if key == "wildguardmix_test":
+        loader_kwargs["only_adversarial"] = only_adversarial
+    ds, info = loader(**loader_kwargs)
     info.setdefault("key", key)
     return ds, info

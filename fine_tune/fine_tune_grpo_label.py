@@ -51,12 +51,14 @@ TRAIN_SAMPLES = 10000
 #MODEL_ID = "Qwen/Qwen2-0.5B-Instruct"
 #MODEL_ID = "Qwen/Qwen3-4B-Thinking-2507"
 #MODEL_ID = "Qwen/Qwen3-4B-Instruct-2507"
-MODEL_ID = "Qwen/Qwen3-4B"
+#MODEL_ID = "Qwen/Qwen3-4B"
+MODEL_ID = "Qwen/Qwen3.5-4B"
+
 DEBUG = False
-NORMATIVE = True # changes system prompt for normative reasoning
+NORMATIVE = False # changes system prompt for normative reasoning
 
 if NORMATIVE:
-    SYSTEM_PROMPT = SYSTEM_PROMPT_GPT3
+    SYSTEM_PROMPT = SYSTEM_PROMPT
 
 
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -89,7 +91,7 @@ GRPO_TRAINING_CONFIG_C = {
     #    "do_sample": True,
     #},
     # 713 for gpt3?, 487 for gpt2, 442 for gpt, 370 for tnormative, 337 for one of the normative, 256 for normal system prompt
-    "max_prompt_length": 1024, # 256 + 81 because the normative system prompt is 81 tokens longer
+    "max_prompt_length": 576, # 256 + 81 because the normative system prompt is 81 tokens longer
     "report_to": ["wandb"],
     "logging_steps": 10,
     "save_strategy": "steps",
@@ -306,6 +308,7 @@ def main() -> None:
         max_prompt_tokens=GRPO_TRAINING_CONFIG["max_prompt_length"],
         tokenizer_name=MODEL_ID,
         system_prompt=SYSTEM_PROMPT,
+        only_adversarial=True
     )
     print(train_ds)
 
