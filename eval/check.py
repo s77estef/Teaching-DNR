@@ -189,9 +189,10 @@ def check_output(
         format_matches += int(format_ok)
 
         sample_entry = {
-            "sample_id": idx + 1,
+            "sample_id": example.get("sample_id", idx),
             "prompt": example["prompt"],
             "rendered_string": rendered_string,
+            "adversarial": example.get("adversarial"),
             "gold_label": gold_label,
             "predicted_label": pred_label,
             "labels_match": matches,

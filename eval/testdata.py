@@ -35,6 +35,10 @@ def _select_num_samples(ds: Dataset, num_samples: int | None) -> Dataset:
     return ds.select(range(min(num_samples, len(ds))))
 
 
+def _attach_sample_ids(ds: Dataset) -> Dataset:
+    return ds.add_column("sample_id", list(range(len(ds))))
+
+
 def load_wildguardmix_test(
     *,
     num_samples: int = 1699,
@@ -47,6 +51,7 @@ def load_wildguardmix_test(
         split="test",
         columns=["prompt", "prompt_harm_label", "adversarial"],
     )
+    ds = _attach_sample_ids(ds)
     ds = ds.filter(lambda ex: ex["prompt_harm_label"] is not None)
     if only_adversarial:
         ds = ds.filter(lambda ex: ex["adversarial"] is True)
@@ -68,9 +73,11 @@ def load_strongreject_test(
     seed: int = 42,
 ) -> Tuple[Dataset, Dict[str, Any]]:
     ds = load_dataset("csv", data_files=STRONGREJECT_DATA_FILE, split="train")
+    ds = _attach_sample_ids(ds)
     ds = ds.rename_column("forbidden_prompt", "prompt")
     ds = ds.add_column("prompt_harm_label", ["harmful"] * len(ds))
-    drop_cols = [col for col in ds.column_names if col not in REQUIRED_COLUMNS]
+    keep_cols = REQUIRED_COLUMNS | {"sample_id"}
+    drop_cols = [col for col in ds.column_names if col not in keep_cols]
     if drop_cols:
         ds = ds.remove_columns(drop_cols)
     ds = ds.shuffle(seed=seed)
@@ -92,8 +99,10 @@ def load_coconot_contrast_test(
     seed: int = 42,
 ) -> Tuple[Dataset, Dict[str, Any]]:
     ds = load_dataset("allenai/coconot", "contrast", split="test")
+    ds = _attach_sample_ids(ds)
     ds = ds.add_column("prompt_harm_label", ["unharmful"] * len(ds))
-    drop_cols = [col for col in ds.column_names if col not in REQUIRED_COLUMNS]
+    keep_cols = REQUIRED_COLUMNS | {"sample_id"}
+    drop_cols = [col for col in ds.column_names if col not in keep_cols]
     if drop_cols:
         ds = ds.remove_columns(drop_cols)
     ds = ds.shuffle(seed=seed)
