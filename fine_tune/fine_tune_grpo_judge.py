@@ -11,11 +11,11 @@ from transformers import AutoTokenizer
 from trl import GRPOConfig, GRPOTrainer
 
 import fine_tune.fine_tune_grpo_label as base
-from fine_tune.reward_funcs_judge import judge_reward
+from fine_tune.reward_funcs_judge import judge_plus_accuracy_reward, judge_reward
 from fine_tune.shared import validate_and_extract_label
 from fine_tune.train_logger import RewardLogger, completion_to_text
 
-REWARD_MODE = "judge"
+REWARD_MODE = "rubric_only"
 
 
 def format_gate_reward(completions, **_) -> List[float]:
@@ -43,12 +43,10 @@ def build_training_args() -> GRPOConfig:
 
 
 def _resolve_reward_funcs() -> List[Callable]:
-    if REWARD_MODE == "baseline":
-        return [base.accuracy_reward]
-    if REWARD_MODE == "judge":
+    if REWARD_MODE == "rubric_only":
         return [format_gate_reward, judge_reward]
-    if REWARD_MODE == "hybrid":
-        return [format_gate_reward, base.accuracy_reward, judge_reward]
+    if REWARD_MODE == "rubric_plus_accuracy":
+        return [format_gate_reward, judge_plus_accuracy_reward]
     raise ValueError(f"Unsupported reward mode: {REWARD_MODE}")
 
 
