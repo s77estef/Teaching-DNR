@@ -55,6 +55,7 @@ def _get_judge_tokenizer():
     if _JUDGE_TOKENIZER is None:
         tokenizer = AutoTokenizer.from_pretrained(JUDGE_MODEL_ID, use_fast=True)
         tokenizer.pad_token = tokenizer.eos_token
+        tokenizer.padding_side = "left"
         _JUDGE_TOKENIZER = tokenizer
     return _JUDGE_TOKENIZER
 
@@ -66,7 +67,7 @@ def _get_judge_model():
         dtype = torch.bfloat16 if device.startswith("cuda") else torch.float32
         model = AutoModelForCausalLM.from_pretrained(
             JUDGE_MODEL_ID,
-            torch_dtype=dtype,
+            dtype=dtype,
         )
         model.eval()
         model.to(device)
