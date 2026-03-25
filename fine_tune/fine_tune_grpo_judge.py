@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 import copy
 import json
+import sys
 import time
 from datetime import datetime
 from pathlib import Path
@@ -11,6 +12,10 @@ from datasets import Dataset
 from peft import LoraConfig, get_peft_model
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from trl import GRPOConfig, GRPOTrainer
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.append(str(PROJECT_ROOT))
 
 from fine_tune.reward_funcs_judge import (
     judge_plus_accuracy_reward,
@@ -31,7 +36,7 @@ torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
 torch.set_default_dtype(torch.bfloat16)
 
-TRAIN_SAMPLES = 10000
+TRAIN_SAMPLES = 100
 MODEL_ID = "Qwen/Qwen3-4B"
 #MODEL_ID = "Qwen/Qwen3.5-4B"
 NORMATIVE = True
@@ -57,7 +62,7 @@ JUDGE_GRPO_TRAINING_CONFIG: Dict[str, object] = {
     "report_to": ["wandb"],
     "logging_steps": 10,
     "save_strategy": "steps",
-    "save_steps": 25,
+    "save_steps": 1,
 }
 
 LORA_CONFIG: Dict[str, Any] = {
