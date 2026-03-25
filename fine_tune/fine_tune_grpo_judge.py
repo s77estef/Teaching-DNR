@@ -21,6 +21,23 @@ from fine_tune.train_logger import RewardLogger, completion_to_text
 
 REWARD_MODE = "rubric_with_gold_direction"
 
+JUDGE_GRPO_TRAINING_CONFIG: Dict[str, object] = {
+    "learning_rate": 1e-5,
+    "beta": 0.025,
+    "remove_unused_columns": False,
+    "per_device_train_batch_size": 2,
+    "gradient_accumulation_steps": 16,
+    "num_train_epochs": 1,
+    "bf16": True,
+    "max_completion_length": 512,
+    "num_generations": 2,
+    "max_prompt_length": 576,
+    "report_to": ["wandb"],
+    "logging_steps": 10,
+    "save_strategy": "steps",
+    "save_steps": 25,
+}
+
 
 def format_gate_reward(completions, **_) -> List[float]:
     rewards = []
@@ -35,15 +52,15 @@ def format_gate_reward(completions, **_) -> List[float]:
 
 
 def build_training_args() -> GRPOConfig:
-    training_config = copy.deepcopy(base.GRPO_TRAINING_CONFIG)
+    config = copy.deepcopy(JUDGE_GRPO_TRAINING_CONFIG)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     model_name = base.MODEL_ID.split("/", 1)[-1]
-    training_config["output_dir"] = str(
+    config["output_dir"] = str(
         Path(__file__).resolve().parent
         / "trained_experiments"
         / f"{model_name}-GRPO-{REWARD_MODE}_{timestamp}"
     )
-    return GRPOConfig(**training_config)
+    return GRPOConfig(**config)
 
 
 def _resolve_reward_funcs() -> List[Callable]:
@@ -70,7 +87,7 @@ def run_trainer(
     tokenizer.padding_side = "right"
     tokenizer.pad_token = tokenizer.eos_token
 
-    config_for_log = copy.deepcopy(training_config or base.GRPO_TRAINING_CONFIG)
+    config_for_log = copy.deepcopy(training_config or JUDGE_GRPO_TRAINING_CONFIG)
     config_for_log["output_dir"] = training_args.output_dir
     config_for_log["reward_mode"] = REWARD_MODE
     config_for_log["reward_funcs"] = [
@@ -79,7 +96,7 @@ def run_trainer(
     base._write_grpo_config(config_for_log, training_args.output_dir)
     base._write_reward_source(training_args.output_dir)
 
-    save_steps = training_args.save_steps or base.GRPO_TRAINING_CONFIG.get("save_steps")
+    save_steps = training_args.save_steps or config_for_log.get("save_steps")
     reward_logger = RewardLogger(
         model_id=base.MODEL_ID,
         system_prompt=base.SYSTEM_PROMPT,
@@ -118,7 +135,7 @@ def main() -> None:
 
     train_ds = base.load_wildguard_train_rendered(
         num_samples=base.TRAIN_SAMPLES,
-        max_prompt_tokens=base.GRPO_TRAINING_CONFIG["max_prompt_length"],
+        max_prompt_tokens=JUDGE_GRPO_TRAINING_CONFIG["max_prompt_length"],
         tokenizer_name=base.MODEL_ID,
         system_prompt=base.SYSTEM_PROMPT,
         only_adversarial=True,
@@ -133,7 +150,7 @@ def main() -> None:
         dataset=train_ds,
         training_args=training_args,
         reward_funcs=reward_funcs,
-        training_config=copy.deepcopy(base.GRPO_TRAINING_CONFIG),
+        training_config=JUDGE_GRPO_TRAINING_CONFIG,
     )
 
 
