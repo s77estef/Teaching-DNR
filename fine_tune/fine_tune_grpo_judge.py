@@ -19,7 +19,7 @@ from fine_tune.reward_funcs_judge import (
 from fine_tune.shared import validate_and_extract_label
 from fine_tune.train_logger import RewardLogger, completion_to_text
 
-REWARD_MODE = "rubric_only"
+REWARD_MODE = "rubric_with_gold_direction"
 
 
 def format_gate_reward(completions, **_) -> List[float]:
