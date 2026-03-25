@@ -170,11 +170,11 @@ def build_training_args() -> GRPOConfig:
 
 def _resolve_reward_funcs() -> List[Callable]:
     if REWARD_MODE == "rubric_only":
-        return [format_gate_reward, judge_reward]
+        return [judge_reward]
     if REWARD_MODE == "rubric_plus_accuracy":
-        return [format_gate_reward, judge_plus_accuracy_reward]
+        return [judge_plus_accuracy_reward]
     if REWARD_MODE == "rubric_with_gold_direction":
-        return [format_gate_reward, judge_with_gold_direction_reward]
+        return [judge_with_gold_direction_reward]
     raise ValueError(f"Unsupported reward mode: {REWARD_MODE}")
 
 
