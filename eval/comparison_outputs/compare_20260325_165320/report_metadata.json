@@ -1,0 +1,24 @@
+{
+  "generated_at_utc": "2026-03-25T16:53:20Z",
+  "input_files": [
+    "eval/check_outputs_new/Qwen3-4B-base_eval_20260322_172135.json",
+    "eval/check_outputs_new/Qwen3-4B-base_eval_20260323_013646.json",
+    "eval/check_outputs_new/Qwen3-4B-checkpoint-1250_eval_20260322_192411-190.json",
+    "eval/check_outputs_new/Qwen3-4B-checkpoint-1250_eval_20260322_222729-192.json",
+    "eval/check_outputs_new/Qwen3-4B-checkpoint-1250_eval_20260323_043217-191.json",
+    "eval/check_outputs_new/Qwen3-4B-checkpoint-1250_eval_20260323_085722-194.json"
+  ],
+  "run_names": [
+    "base@20260322_172135",
+    "base@20260323_013646",
+    "checkpoint-1250@20260322_192411-190",
+    "checkpoint-1250@20260322_222729-192",
+    "checkpoint-1250@20260323_043217-191",
+    "checkpoint-1250@20260323_085722-194"
+  ],
+  "output_files": {
+    "summary_txt": "eval/comparison_outputs/compare_20260325_165320/summary.txt",
+    "disagreements_json": "eval/comparison_outputs/compare_20260325_165320/disagreements.json",
+    "disagreements_csv": "eval/comparison_outputs/compare_20260325_165320/disagreements.csv"
+  }
+}
