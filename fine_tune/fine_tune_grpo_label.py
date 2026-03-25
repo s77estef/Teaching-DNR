@@ -51,14 +51,14 @@ TRAIN_SAMPLES = 10000
 #MODEL_ID = "Qwen/Qwen2-0.5B-Instruct"
 #MODEL_ID = "Qwen/Qwen3-4B-Thinking-2507"
 #MODEL_ID = "Qwen/Qwen3-4B-Instruct-2507"
-#MODEL_ID = "Qwen/Qwen3-4B"
-MODEL_ID = "Qwen/Qwen3.5-4B"
+MODEL_ID = "Qwen/Qwen3-4B"
+#MODEL_ID = "Qwen/Qwen3.5-4B"
 
 DEBUG = False
 NORMATIVE = False # changes system prompt for normative reasoning
 
 if NORMATIVE:
-    SYSTEM_PROMPT = SYSTEM_PROMPT
+    SYSTEM_PROMPT = SYSTEM_PROMPT_GPT3
 
 
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
