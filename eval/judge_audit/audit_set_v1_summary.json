@@ -1,0 +1,35 @@
+{
+  "seed": 7,
+  "num_candidates": 1656,
+  "num_selected": 100,
+  "only_adversarial": true,
+  "candidate_bucket_counts": {
+    "articulate_wrong_direction": 107,
+    "correct_other": 1260,
+    "high_reward_correct": 42,
+    "malformed": 24,
+    "wrong_label_right_direction": 223
+  },
+  "selected_bucket_counts": {
+    "articulate_wrong_direction": 20,
+    "correct_other": 30,
+    "high_reward_correct": 20,
+    "malformed": 10,
+    "wrong_label_right_direction": 20
+  },
+  "eval_paths": [
+    "/home/s77estef/code/Teaching-DNR/eval/check_outputs/Qwen3-4B-checkpoint-900_eval_20260331_161332.json",
+    "/home/s77estef/code/Teaching-DNR/eval/check_outputs/Qwen3-4B-checkpoint-900_eval_20260330_054202.json"
+  ],
+  "checkpoint_paths": [
+    "/home/s77estef/code/Teaching-DNR/fine_tune/trained_experiments/Qwen3-4B-GRPO-rubric_with_gold_direction_20260328_151255/checkpoint-600/checkpoint_batch_samples.jsonl",
+    "/home/s77estef/code/Teaching-DNR/fine_tune/trained_experiments/Qwen3-4B-GRPO-rubric_with_gold_direction_20260328_151255/checkpoint-900/checkpoint_batch_samples.jsonl"
+  ],
+  "quotas": {
+    "high_reward_correct": 20,
+    "correct_other": 30,
+    "wrong_label_right_direction": 20,
+    "articulate_wrong_direction": 20,
+    "malformed": 10
+  }
+}
