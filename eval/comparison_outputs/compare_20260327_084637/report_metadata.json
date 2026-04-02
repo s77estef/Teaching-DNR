@@ -1,0 +1,20 @@
+{
+  "generated_at_utc": "2026-03-27T08:46:37Z",
+  "input_files": [
+    "eval/to_compare/adv_normative.json",
+    "eval/to_compare/adv_think.json",
+    "eval/to_compare/all_normative.json",
+    "eval/to_compare/all_think.json"
+  ],
+  "run_names": [
+    "adv_normative",
+    "adv_think",
+    "all_normative",
+    "all_think"
+  ],
+  "output_files": {
+    "summary_txt": "eval/comparison_outputs/compare_20260327_084637/summary.txt",
+    "disagreements_json": "eval/comparison_outputs/compare_20260327_084637/disagreements.json",
+    "disagreements_csv": "eval/comparison_outputs/compare_20260327_084637/disagreements.csv"
+  }
+}
