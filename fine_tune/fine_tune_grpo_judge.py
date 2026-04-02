@@ -36,7 +36,7 @@ torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
 torch.set_default_dtype(torch.bfloat16)
 
-TRAIN_SAMPLES = 10000
+TRAIN_SAMPLES = 20000
 MODEL_ID = "Qwen/Qwen3-4B"
 #MODEL_ID = "Qwen/Qwen3.5-4B"
 NORMATIVE = True
@@ -53,7 +53,7 @@ JUDGE_GRPO_TRAINING_CONFIG: Dict[str, object] = {
     "learning_rate": 1e-5,
     "beta": 0.025,
     "remove_unused_columns": False,
-    "per_device_train_batch_size": 2,
+    "per_device_train_batch_size": 5,
     "gradient_accumulation_steps": 16,
     "num_train_epochs": 1,
     "bf16": True,
@@ -63,7 +63,7 @@ JUDGE_GRPO_TRAINING_CONFIG: Dict[str, object] = {
     "report_to": ["wandb"],
     "logging_steps": 10,
     "save_strategy": "steps",
-    "save_steps": 25,
+    "save_steps": 50,
 }
 
 LORA_CONFIG: Dict[str, Any] = {
@@ -223,6 +223,7 @@ def run_trainer(
     start_time = time.time()
     trainer.train()
     elapsed = time.time() - start_time
+    #trainer.train(resume_from_checkpoint="fine_tune/trained_experiments/Qwen3-4B-GRPO-rubric_with_gold_direction_20260326_161103/checkpoint-625")
     trainer.save_model(training_args.output_dir)
     final_results = {
         "final_steps": trainer.state.global_step,

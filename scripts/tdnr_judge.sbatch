@@ -1,6 +1,6 @@
 #!/bin/bash
-#SBATCH --job-name=check
-#SBATCH --partition=A40medium
+#SBATCH --job-name=judge
+#SBATCH --partition=A100medium
 #SBATCH --time=1-00:00:00
 #SBATCH --gres=gpu:1
 #SBATCH --ntasks=1
@@ -21,6 +21,6 @@ conda activate ~/envs/tdnr
 echo "STEP 4: conda env activated"
 cd "$HOME/code/Teaching-DNR"
 echo "STEP 5: cd successful"
-conda run -p ~/envs/tdnr python -u eval/check.py
+conda run -p ~/envs/tdnr python -u fine_tune/fine_tune_grpo_judge.py
 echo "STEP 6: python finished"
 

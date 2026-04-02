@@ -78,12 +78,14 @@ ADAPTER_PATH = None
 #ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-SFT-test_20260210_143755/checkpoint-20"
 #ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-test_20260211_181203-181/checkpoint-1000"
 #ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-test_20260217_202726-189/checkpoint-1250"
-
+#ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-rubric_with_gold_direction_20260328_151255/checkpoint-600"
+#ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-rubric_plus_accuracy_20260330_175331/checkpoint-900"
+ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-rubric_with_gold_direction_20260401_144711/checkpoint-500"
 
 
 DATASET_KEY = "wildguardmix_test"
 GENERATION_CONFIG = {
-    "max_new_tokens": 512,
+    "max_new_tokens": 1024,
     "temperature": 0.6,
 }
 NORMATIVE = True
