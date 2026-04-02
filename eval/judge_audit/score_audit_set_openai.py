@@ -10,6 +10,7 @@ from eval.judge_audit.common import (
     DEFAULT_AUDIT_SET_PATH,
     DEFAULT_RESULTS_DIR,
     build_messages_for_mode,
+    extract_label_if_any,
     load_audit_rows,
     write_jsonl,
 )
@@ -17,6 +18,8 @@ from eval.judge_audit.common import (
 
 _SCORE_RE = re.compile(r"<score>\s*([01](?:\.\d+)?)\s*</score>", re.IGNORECASE)
 _JSON_SCORE_RE = re.compile(r'"score"\s*:\s*([01](?:\.\d+)?)')
+JUDGE_WEIGHT = 1.0
+ACCURACY_WEIGHT = 0.0
 
 
 def parse_args() -> argparse.Namespace:
@@ -34,7 +37,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--mode",
-        choices=["rubric_only", "gold_direction"],
+        choices=["rubric_only", "gold_direction", "judge_plus_accuracy"],
         default="gold_direction",
     )
     parser.add_argument("--max-examples", type=int, default=None)
@@ -120,13 +123,29 @@ def main() -> None:
         if existing_key in existing:
             continue
 
-        messages = build_messages_for_mode(row, args.mode)
+        judge_mode = "rubric_only" if args.mode == "judge_plus_accuracy" else args.mode
+        messages = build_messages_for_mode(row, judge_mode)
         response = client.responses.create(
             model=args.model,
             input=messages,
         )
         raw_output = _extract_output_text(response)
-        score = float(_parse_score(raw_output))
+        judge_score = float(_parse_score(raw_output))
+        score = judge_score
+        accuracy = None
+        if args.mode == "judge_plus_accuracy":
+            predicted_label = extract_label_if_any(
+                row.get("completion") or "",
+                include_normative_reasoning=True,
+            )
+            gold_label = str(row.get("gold_label") or "").lower()
+            accuracy = 1.0 if predicted_label is not None and predicted_label == gold_label else 0.0
+            total_weight = JUDGE_WEIGHT + ACCURACY_WEIGHT
+            if total_weight <= 0:
+                raise SystemExit("JUDGE_WEIGHT + ACCURACY_WEIGHT must be positive.")
+            score = (
+                (JUDGE_WEIGHT * judge_score) + (ACCURACY_WEIGHT * accuracy)
+            ) / total_weight
         output_rows.append(
             {
                 "example_id": example_id,
@@ -134,6 +153,8 @@ def main() -> None:
                 "mode": args.mode,
                 "judge_model": args.model,
                 "score": score,
+                "judge_score": judge_score,
+                "accuracy": accuracy,
                 "raw_output": raw_output,
                 "response_id": getattr(response, "id", None),
             }
