@@ -4,18 +4,50 @@
   "num_selected": 100,
   "only_adversarial": true,
   "candidate_bucket_counts": {
-    "articulate_wrong_direction": 107,
+    "articulate_wrong_direction": 327,
     "correct_other": 1260,
     "high_reward_correct": 42,
     "malformed": 24,
-    "wrong_label_right_direction": 223
+    "wrong_label_right_direction": 3
   },
   "selected_bucket_counts": {
-    "articulate_wrong_direction": 20,
+    "articulate_wrong_direction": 37,
     "correct_other": 30,
     "high_reward_correct": 20,
     "malformed": 10,
-    "wrong_label_right_direction": 20
+    "wrong_label_right_direction": 3
+  },
+  "bucket_report": {
+    "articulate_wrong_direction": {
+      "target": 20,
+      "available": 327,
+      "actual": 37,
+      "shortfall": 0
+    },
+    "correct_other": {
+      "target": 30,
+      "available": 1260,
+      "actual": 30,
+      "shortfall": 0
+    },
+    "high_reward_correct": {
+      "target": 20,
+      "available": 42,
+      "actual": 20,
+      "shortfall": 0
+    },
+    "malformed": {
+      "target": 10,
+      "available": 24,
+      "actual": 10,
+      "shortfall": 0
+    },
+    "wrong_label_right_direction": {
+      "target": 20,
+      "available": 3,
+      "actual": 3,
+      "shortfall": 17
+    }
   },
   "eval_paths": [
     "/home/s77estef/code/Teaching-DNR/eval/check_outputs/Qwen3-4B-checkpoint-900_eval_20260331_161332.json",

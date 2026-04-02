@@ -87,6 +87,22 @@ def main() -> None:
     rows = dedupe_examples(rows)
     rows = [row for row in rows if row.get("adversarial") is True]
     selected = choose_examples_by_bucket(rows, seed=args.seed, quotas=DEFAULT_QUOTAS)
+    candidate_counts = bucket_summary(rows)
+    selected_counts = bucket_summary(selected)
+    bucket_report = {}
+    all_bucket_names = sorted(
+        set(DEFAULT_QUOTAS) | set(candidate_counts) | set(selected_counts)
+    )
+    for bucket in all_bucket_names:
+        target = int(DEFAULT_QUOTAS.get(bucket, 0))
+        available = int(candidate_counts.get(bucket, 0))
+        actual = int(selected_counts.get(bucket, 0))
+        bucket_report[bucket] = {
+            "target": target,
+            "available": available,
+            "actual": actual,
+            "shortfall": max(0, target - actual),
+        }
 
     write_jsonl(args.candidates_output, rows)
     write_jsonl(args.output, selected)
@@ -133,8 +149,9 @@ def main() -> None:
             "num_candidates": len(rows),
             "num_selected": len(selected),
             "only_adversarial": True,
-            "candidate_bucket_counts": bucket_summary(rows),
-            "selected_bucket_counts": bucket_summary(selected),
+            "candidate_bucket_counts": candidate_counts,
+            "selected_bucket_counts": selected_counts,
+            "bucket_report": bucket_report,
             "eval_paths": [str(path) for path in eval_paths],
             "checkpoint_paths": [str(path) for path in checkpoint_paths],
             "quotas": DEFAULT_QUOTAS,
