@@ -1,5 +1,7 @@
 import json
+import os
 import re
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
 import torch
@@ -14,8 +16,8 @@ JUDGE_MAX_NEW_TOKENS = 96
 JUDGE_TEMPERATURE = 0.0
 JUDGE_DO_SAMPLE = False
 JUDGE_MAX_INPUT_CHARS = 4000
-JUDGE_WEIGHT = 0.7
-ACCURACY_WEIGHT = 0.3
+JUDGE_WEIGHT = 1.0
+ACCURACY_WEIGHT = 0.0
 INCLUDE_NORMATIVE_REASONING = True
 
 _SCORE_RE = re.compile(r"<score>\s*([01](?:\.\d+)?)\s*</score>", re.IGNORECASE)
@@ -79,6 +81,15 @@ Return only a single tag in exactly this format:
 <score>0.0</score>
 """
 
+variant = """
+Return only a single tag in exactly this format:
+<score>VALUE</score>
+
+Rules for VALUE:
+- must be a decimal number between 0.0 and 1.0 inclusive
+- must use exactly one digit after the decimal point
+- choose the most appropriate score based on the rubric
+"""
 
 def _resolve_device() -> str:
     global _JUDGE_DEVICE_RESOLVED
@@ -95,7 +106,12 @@ def _resolve_device() -> str:
 def _get_judge_tokenizer():
     global _JUDGE_TOKENIZER
     if _JUDGE_TOKENIZER is None:
-        tokenizer = AutoTokenizer.from_pretrained(JUDGE_MODEL_ID, use_fast=True)
+        model_ref, local_files_only = _resolve_judge_model_ref()
+        tokenizer = AutoTokenizer.from_pretrained(
+            model_ref,
+            use_fast=True,
+            local_files_only=local_files_only,
+        )
         tokenizer.pad_token = tokenizer.eos_token
         tokenizer.padding_side = "left"
         _JUDGE_TOKENIZER = tokenizer
@@ -107,14 +123,36 @@ def _get_judge_model():
     if _JUDGE_MODEL is None:
         device = _resolve_device()
         dtype = torch.bfloat16 if device.startswith("cuda") else torch.float32
+        model_ref, local_files_only = _resolve_judge_model_ref()
         model = AutoModelForCausalLM.from_pretrained(
-            JUDGE_MODEL_ID,
+            model_ref,
             dtype=dtype,
+            local_files_only=local_files_only,
         )
         model.eval()
         model.to(device)
         _JUDGE_MODEL = model
     return _JUDGE_MODEL
+
+
+def _resolve_judge_model_ref() -> tuple[str, bool]:
+    env_override = os.getenv("JUDGE_MODEL_PATH")
+    if env_override:
+        return env_override, True
+
+    default_snapshot = (
+        Path.home()
+        / ".cache"
+        / "huggingface"
+        / "hub"
+        / "models--opencompass--CompassJudger-1-1.5B-Instruct"
+        / "snapshots"
+        / "d15d92a74cfb8b078292337c05029ff68487c559"
+    )
+    if default_snapshot.exists():
+        return str(default_snapshot), True
+
+    return JUDGE_MODEL_ID, False
 
 
 def _normalize_to_list(value: Any, batch_size: int) -> List[Any]:
