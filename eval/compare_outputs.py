@@ -7,9 +7,8 @@ import json
 from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime
-from io import StringIO
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Sequence
+from typing import Any, Callable, Dict, Iterable, List, Sequence
 
 
 DEFAULT_OUTPUT_ROOT = Path("eval/comparison_outputs")
@@ -29,9 +28,6 @@ class ReportBuffer:
 
     def line(self, text: str = "") -> None:
         self._parts.append(text)
-
-    def extend(self, lines: Iterable[str]) -> None:
-        self._parts.extend(lines)
 
     def render(self) -> str:
         return "\n".join(self._parts) + "\n"
@@ -80,6 +76,15 @@ def _label_flip_counts(samples: Iterable[Dict[str, Any]]) -> Counter[str]:
     return counter
 
 
+def _filter_run(run: RunSummary, predicate: Callable[[Dict[str, Any]], bool]) -> RunSummary:
+    return RunSummary(
+        name=run.name,
+        path=run.path,
+        samples=[sample for sample in run.samples if predicate(sample)],
+        metrics=run.metrics,
+    )
+
+
 def _collect_sample_rows(runs: Sequence[RunSummary]) -> List[Dict[str, Any]]:
     indexes = {run.name: _sample_index(run) for run in runs}
     sample_ids = [sample["sample_id"] for sample in runs[0].samples]
@@ -124,15 +129,18 @@ def add_run_summary_section(report: ReportBuffer, runs: Sequence[RunSummary]) ->
     report.line(header)
     report.line("-" * len(header))
     for run in runs:
+        total = len(run.samples)
         wrong_label = sum(not sample["labels_match"] for sample in run.samples)
         wrong_format = sum(not sample["format_correct"] for sample in run.samples)
+        label_acc = (total - wrong_label) / total if total else 0.0
+        format_acc = (total - wrong_format) / total if total else 0.0
         top_flips = ", ".join(
             f"{flip}:{count}" for flip, count in _label_flip_counts(run.samples).most_common(2)
         )
         report.line(
             f"{run.name:<33} "
-            f"{_format_ratio(run.metrics['label_accuracy']):>10} "
-            f"{_format_ratio(run.metrics['format_accuracy']):>10} "
+            f"{_format_ratio(label_acc):>10} "
+            f"{_format_ratio(format_acc):>10} "
             f"{wrong_label:>10} {wrong_format:>10} "
             f"{top_flips[:24]:>24}"
         )
@@ -225,6 +233,7 @@ def add_unique_errors_section(
 
 
 def build_text_report(
+    title: str,
     runs: Sequence[RunSummary],
     rows: Sequence[Dict[str, Any]],
     run_names: Sequence[str],
@@ -232,9 +241,10 @@ def build_text_report(
     prompt_chars: int,
 ) -> str:
     report = ReportBuffer()
-    report.line("Compare Outputs Report")
+    report.line(title)
     report.line(f"Generated at UTC: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')}")
     report.line(f"Runs compared: {len(runs)}")
+    report.line(f"Samples in scope: {len(rows)}")
     report.line("Input files:")
     for run in runs:
         report.line(f"- {run.path}")
@@ -317,7 +327,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "paths",
         nargs="*",
-        default=["eval/check_outputs_new/*.json"], # folder name here
+        default=["eval/to_compare/*.json"],
         help="Evaluation JSON files or glob patterns.",
     )
     parser.add_argument(
@@ -330,7 +340,7 @@ def parse_args() -> argparse.Namespace:
         "--prompt-chars",
         type=int,
         default=180,
-        help="Maximum prompt characters to print per sample in the text report.",
+        help="Maximum prompt characters to print per sample in the text reports.",
     )
     parser.add_argument(
         "--output-dir",
@@ -341,7 +351,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--quiet",
         action="store_true",
-        help="Do not print the full text report to stdout; only print output paths.",
+        help="Do not print the full standard summary to stdout; only print output paths.",
     )
     return parser.parse_args()
 
@@ -382,22 +392,40 @@ def main() -> None:
 
     run_names = [run.name for run in runs]
     rows = _collect_sample_rows(runs)
+
+    adversarial_runs = [
+        _filter_run(run, lambda sample: bool(sample.get("adversarial") is True)) for run in runs
+    ]
+    adversarial_rows = [row for row in rows if bool(row.get("adversarial") is True)]
+
     output_dir = args.output_dir or _default_output_dir()
     output_dir.mkdir(parents=True, exist_ok=True)
 
     text_report = build_text_report(
+        "Compare Outputs Report",
         runs,
         rows,
         run_names,
         top_n=args.top_n,
         prompt_chars=args.prompt_chars,
     )
+    adversarial_text_report = build_text_report(
+        "Compare Outputs Report (Adversarial Only)",
+        adversarial_runs,
+        adversarial_rows,
+        run_names,
+        top_n=args.top_n,
+        prompt_chars=args.prompt_chars,
+    )
+
     text_path = output_dir / "summary.txt"
+    adversarial_text_path = output_dir / "summary_adversarial.txt"
     json_path = output_dir / "disagreements.json"
     csv_path = output_dir / "disagreements.csv"
     meta_path = output_dir / "report_metadata.json"
 
     text_path.write_text(text_report)
+    adversarial_text_path.write_text(adversarial_text_report)
     json_path.write_text(json.dumps(_json_ready_rows(rows), indent=2))
     write_disagreement_csv(csv_path, rows, run_names)
     meta_path.write_text(
@@ -408,6 +436,7 @@ def main() -> None:
                 "run_names": run_names,
                 "output_files": {
                     "summary_txt": str(text_path),
+                    "summary_adversarial_txt": str(adversarial_text_path),
                     "disagreements_json": str(json_path),
                     "disagreements_csv": str(csv_path),
                 },
@@ -420,6 +449,7 @@ def main() -> None:
         print(text_report, end="")
     print(f"Wrote report files to: {output_dir}")
     print(f"- {text_path}")
+    print(f"- {adversarial_text_path}")
     print(f"- {json_path}")
     print(f"- {csv_path}")
     print(f"- {meta_path}")
