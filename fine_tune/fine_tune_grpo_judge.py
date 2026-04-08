@@ -36,7 +36,7 @@ torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
 torch.set_default_dtype(torch.bfloat16)
 
-TRAIN_SAMPLES = 20000
+TRAIN_SAMPLES = 10000
 MODEL_ID = "Qwen/Qwen3-4B"
 #MODEL_ID = "Qwen/Qwen3.5-4B"
 NORMATIVE = True
@@ -45,7 +45,7 @@ if NORMATIVE:
     SYSTEM_PROMPT = SYSTEM_PROMPT_GPT3
 
 # one of "rubric_only", "rubric_plus_accuracy", "rubric_with_gold_direction"
-REWARD_MODE = "rubric_with_gold_direction"
+REWARD_MODE = "rubric_plus_accuracy"
 GRPO_CONFIG_FILENAME = "grpo_config.json"
 REWARD_SOURCE_FILENAME = "reward_funcs.py"
 

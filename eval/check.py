@@ -80,7 +80,7 @@ ADAPTER_PATH = None
 #ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-test_20260217_202726-189/checkpoint-1250"
 #ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-rubric_with_gold_direction_20260328_151255/checkpoint-600"
 #ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-rubric_plus_accuracy_20260330_175331/checkpoint-900"
-ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-rubric_with_gold_direction_20260401_144711/checkpoint-500"
+ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-rubric_with_gold_direction_20260401_144711/checkpoint-350"
 
 
 DATASET_KEY = "wildguardmix_test"
