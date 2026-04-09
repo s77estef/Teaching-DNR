@@ -17,6 +17,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.append(str(PROJECT_ROOT))
 
+from fine_tune import reward_funcs_judge as reward_source_module
 from fine_tune.reward_funcs_judge import (
     judge_plus_accuracy_reward,
     judge_reward,
@@ -36,7 +37,7 @@ torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
 torch.set_default_dtype(torch.bfloat16)
 
-TRAIN_SAMPLES = 10000
+TRAIN_SAMPLES = 20000
 MODEL_ID = "Qwen/Qwen3-4B"
 #MODEL_ID = "Qwen/Qwen3.5-4B"
 NORMATIVE = True
@@ -45,7 +46,7 @@ if NORMATIVE:
     SYSTEM_PROMPT = SYSTEM_PROMPT_GPT3
 
 # one of "rubric_only", "rubric_plus_accuracy", "rubric_with_gold_direction"
-REWARD_MODE = "rubric_plus_accuracy"
+REWARD_MODE = "rubric_with_gold_direction"
 GRPO_CONFIG_FILENAME = "grpo_config.json"
 REWARD_SOURCE_FILENAME = "reward_funcs.py"
 
@@ -53,7 +54,7 @@ JUDGE_GRPO_TRAINING_CONFIG: Dict[str, object] = {
     "learning_rate": 1e-5,
     "beta": 0.025,
     "remove_unused_columns": False,
-    "per_device_train_batch_size": 5,
+    "per_device_train_batch_size": 6,
     "gradient_accumulation_steps": 16,
     "num_train_epochs": 1,
     "bf16": True,
@@ -127,19 +128,21 @@ def _format_duration(seconds: float) -> str:
 def _write_reward_source(output_dir: str) -> Path:
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
-    source = Path(__file__).read_text(encoding="utf-8")
-    marker = "# --------------------------------------------------------- REWARDS"
-    start = source.find(marker)
-    reward_block = source
-    if start != -1:
-        end = source.find(marker, start + len(marker))
-        if end != -1:
-            end_line = source.find("\n", end)
-            if end_line == -1:
-                end_line = len(source)
-            reward_block = source[start:end_line].rstrip() + "\n"
-        else:
-            reward_block = source[start:]
+    reward_source_path = Path(reward_source_module.__file__).resolve()
+    reward_block = reward_source_path.read_text(encoding="utf-8")
+
+    header_lines = [
+        f"# REWARD_MODE = {REWARD_MODE!r}",
+    ]
+    if REWARD_MODE == "rubric_plus_accuracy":
+        header_lines.extend(
+            [
+                f"# JUDGE_WEIGHT = {reward_source_module.JUDGE_WEIGHT}",
+                f"# ACCURACY_WEIGHT = {reward_source_module.ACCURACY_WEIGHT}",
+            ]
+        )
+
+    reward_block = "\n".join(header_lines) + "\n\n" + reward_block
     output_file = output_path / REWARD_SOURCE_FILENAME
     output_file.write_text(reward_block, encoding="utf-8")
     return output_file
