@@ -1,6 +1,7 @@
 # TODO use load train from shared
 
 #!/usr/bin/env python
+import argparse
 import json
 import time
 from datetime import datetime
@@ -91,6 +92,46 @@ GENERATION_CONFIG = {
 NORMATIVE = True
 if NORMATIVE:
     SYSTEM_PROMPT = SYSTEM_PROMPT_GPT3
+
+
+def resolve_adapter_path(adapter_path: str | Path | None) -> str | None:
+    if adapter_path is None:
+        return None
+
+    candidate = Path(adapter_path).expanduser()
+    search_paths = [candidate]
+
+    if not candidate.is_absolute():
+        search_paths.extend(
+            [
+                PROJECT_ROOT / candidate,
+                FINE_TUNE_DIR / candidate,
+                FINE_TUNE_DIR / "trained_experiments" / candidate,
+            ]
+        )
+
+    for path in search_paths:
+        if path.exists():
+            return str(path.resolve())
+
+    searched = ", ".join(str(path) for path in search_paths)
+    raise FileNotFoundError(f"Adapter path not found. Checked: {searched}")
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Evaluate the base model or a LoRA adapter checkpoint."
+    )
+    parser.add_argument(
+        "adapter_path",
+        nargs="?",
+        default=None,
+        help=(
+            "Optional adapter/checkpoint path. Can be absolute, project-relative, "
+            "fine_tune-relative, or relative to fine_tune/trained_experiments."
+        ),
+    )
+    return parser.parse_args()
 
 
 def check_output(
@@ -275,10 +316,13 @@ def check_output(
 
 
 def main() -> None:
+    args = parse_args()
     hf_cli_login()
+    cli_adapter_path = resolve_adapter_path(args.adapter_path)
+    default_adapter_path = resolve_adapter_path(ADAPTER_PATH)
     check_output(
         print_samples=PRINT_SAMPLES,
-        adapter_path=ADAPTER_PATH,
+        adapter_path=cli_adapter_path or default_adapter_path,
         dataset_key=DATASET_KEY,
     )
 
