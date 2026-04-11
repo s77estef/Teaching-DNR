@@ -134,10 +134,19 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def resolve_eval_output_dir(adapter_path: str | Path | None) -> Path:
+    if adapter_path is None:
+        return RESULTS_DIR
+
+    adapter_dir = Path(adapter_path)
+    run_dir = adapter_dir.parent if adapter_dir.name.startswith("checkpoint-") else adapter_dir
+    return run_dir / "eval"
+
+
 def check_output(
     print_samples: int = PRINT_SAMPLES,
     adapter_path: str | None = ADAPTER_PATH,
-    output_dir: Path | str = RESULTS_DIR,
+    output_dir: Path | str | None = None,
     test_ds: Optional[Dataset] = None,
     dataset_info: Optional[Dict[str, Any]] = None,
     dataset_key: str = DATASET_KEY,
@@ -148,7 +157,7 @@ def check_output(
     columns and `dataset_info` can describe the source metadata.
     """
 
-    output_dir = Path(output_dir)
+    output_dir = resolve_eval_output_dir(adapter_path) if output_dir is None else Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     base = AutoModelForCausalLM.from_pretrained(MODEL_ID, torch_dtype="auto", device_map="auto")
