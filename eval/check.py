@@ -57,8 +57,8 @@ except ImportError:
 
 MODEL_ID = "Qwen/Qwen3-4B"
 # max non-Null: 1699
-PRINT_SAMPLES = 1699
-TEST_SAMPLES = 1699
+PRINT_SAMPLES = 50
+TEST_SAMPLES = 50
 
 ADAPTER_PATH = None
 #ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-test_20251205_164937_195803_merged/checkpoint-3000"
@@ -81,13 +81,16 @@ ADAPTER_PATH = None
 #ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-test_20260217_202726-189/checkpoint-1250"
 #ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-rubric_with_gold_direction_20260328_151255/checkpoint-600"
 #ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-rubric_plus_accuracy_20260330_175331/checkpoint-900"
-ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-rubric_with_gold_direction_20260401_144711/checkpoint-350"
+#ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-rubric_with_gold_direction_20260401_144711/checkpoint-350"
+ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-rubric_with_gold_direction_20260411_191018-5-16-10k/checkpoint-250"
+
+
 
 
 DATASET_KEY = "wildguardmix_test"
 GENERATION_CONFIG = {
     "max_new_tokens": 1024,
-    "temperature": 0.6,
+    "do_sample": False,
 }
 NORMATIVE = True
 if NORMATIVE:
@@ -328,7 +331,7 @@ def main() -> None:
     args = parse_args()
     hf_cli_login()
     cli_adapter_path = resolve_adapter_path(args.adapter_path)
-    default_adapter_path = resolve_adapter_path(ADAPTER_PATH)
+    default_adapter_path = None if cli_adapter_path else resolve_adapter_path(ADAPTER_PATH)
     check_output(
         print_samples=PRINT_SAMPLES,
         adapter_path=cli_adapter_path or default_adapter_path,
