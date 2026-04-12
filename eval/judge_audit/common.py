@@ -502,7 +502,9 @@ def build_messages_for_mode(example: Dict[str, Any], mode: str) -> List[Dict[str
     if predicted_label is None:
         predicted_label = "unharmful"
 
-    normative_reasoning = example.get("normative_reasoning") or ""
+    normative_reasoning = example.get("normative_reasoning") or extract_normative_reasoning(
+        example.get("completion") or ""
+    ) or ""
     return _build_judge_messages(
         user_prompt=example.get("prompt") or "",
         normative_reasoning=normative_reasoning,
