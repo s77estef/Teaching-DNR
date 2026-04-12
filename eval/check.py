@@ -92,6 +92,7 @@ GENERATION_CONFIG = {
     "max_new_tokens": 1024,
     "do_sample": False,
 }
+BATCH_SIZE = 8
 NORMATIVE = True
 if NORMATIVE:
     SYSTEM_PROMPT = SYSTEM_PROMPT_GPT3
@@ -153,6 +154,7 @@ def check_output(
     test_ds: Optional[Dataset] = None,
     dataset_info: Optional[Dict[str, Any]] = None,
     dataset_key: str = DATASET_KEY,
+    batch_size: int = BATCH_SIZE,
 ) -> Path:
     """Generate predictions, compute metrics, and persist a JSON report.
 
@@ -168,6 +170,7 @@ def check_output(
     tokenizer.pad_token = tokenizer.eos_token
 
     model = PeftModel.from_pretrained(base, adapter_path) if adapter_path else base
+    model.eval()
 
     def generate_with_reasoning(messages):
         rendered = tokenizer.apply_chat_template(
@@ -190,6 +193,43 @@ def check_output(
         num_input_tokens = inputs["input_ids"].shape[1]
         num_generated_tokens = output_ids.shape[1] - num_input_tokens
         return rendered, generated_text, inference_duration, num_generated_tokens
+
+    def _count_generated_tokens(token_ids: torch.Tensor) -> int:
+        eos_positions = (token_ids == tokenizer.eos_token_id).nonzero(as_tuple=False)
+        if eos_positions.numel() > 0:
+            return int(eos_positions[0].item()) + 1
+        return int(token_ids.shape[0])
+
+    def generate_with_reasoning_batch(batch_messages):
+        rendered_batch = [
+            tokenizer.apply_chat_template(
+                messages,
+                tokenize=False,
+                add_generation_prompt=True,
+            )
+            for messages in batch_messages
+        ]
+        inputs = tokenizer(rendered_batch, return_tensors="pt", padding=True).to(model.device)
+        start_time = time.time()
+        with torch.no_grad():
+            output_ids = model.generate(
+                **inputs,
+                **GENERATION_CONFIG,
+                eos_token_id=tokenizer.eos_token_id,
+                pad_token_id=tokenizer.pad_token_id,
+            )
+        end_time = time.time()
+
+        # With left padding, every row's generated continuation starts after the
+        # full padded prompt width, not after the row's unpadded prompt length.
+        generation_start = inputs["input_ids"].shape[1]
+        generated_token_ids = output_ids[:, generation_start:]
+        generated_texts = tokenizer.batch_decode(generated_token_ids, skip_special_tokens=True)
+        generated_token_counts = [
+            _count_generated_tokens(token_row) for token_row in generated_token_ids
+        ]
+        inference_duration = end_time - start_time
+        return rendered_batch, generated_texts, inference_duration, generated_token_counts
 
     if test_ds is None:
         test_ds, dataset_info = get_test_dataset(
@@ -230,54 +270,70 @@ def check_output(
     wrong_label_samples = []
     wrong_format_samples = []
 
-    for idx in tqdm(range(total_samples), desc="Evaluating", unit="sample"):
-        conversation = prompts_ds[idx]["prompt"]
-        example = test_ds[idx]
-        rendered_string, generated_text, dt, tokens = generate_with_reasoning(conversation)
+    effective_batch_size = max(1, int(batch_size))
 
-        format_ok, pred_label = validate_and_extract_label(
-            generated_text, include_normative_reasoning=NORMATIVE
+    for batch_start in tqdm(
+        range(0, total_samples, effective_batch_size),
+        desc="Evaluating",
+        unit="batch",
+    ):
+        batch_end = min(batch_start + effective_batch_size, total_samples)
+        batch_indices = list(range(batch_start, batch_end))
+        batch_conversations = [prompts_ds[idx]["prompt"] for idx in batch_indices]
+        batch_examples = [test_ds[idx] for idx in batch_indices]
+        rendered_batch, generated_text_batch, batch_dt, token_count_batch = generate_with_reasoning_batch(
+            batch_conversations
         )
-        gold_label = (example["prompt_harm_label"] or "").lower()
 
-        # Only count label correctness if format is ok (mirrors reward gating)
-        matches = bool(format_ok and pred_label is not None and pred_label == gold_label)
+        for idx, example, rendered_string, generated_text, tokens in zip(
+            batch_indices,
+            batch_examples,
+            rendered_batch,
+            generated_text_batch,
+            token_count_batch,
+        ):
+            format_ok, pred_label = validate_and_extract_label(
+                generated_text, include_normative_reasoning=NORMATIVE
+            )
+            gold_label = (example["prompt_harm_label"] or "").lower()
 
-        label_matches += int(matches)
-        format_matches += int(format_ok)
+            # Only count label correctness if format is ok (mirrors reward gating)
+            matches = bool(format_ok and pred_label is not None and pred_label == gold_label)
 
-        is_adversarial = bool(example.get("adversarial") is True)
-        if is_adversarial:
-            adversarial_samples += 1
-            adversarial_label_matches += int(matches)
-            adversarial_format_matches += int(format_ok)
+            label_matches += int(matches)
+            format_matches += int(format_ok)
 
-        sample_entry = {
-            "sample_id": example.get("sample_id", idx),
-            "prompt": example["prompt"],
-            "rendered_string": rendered_string,
-            "adversarial": example.get("adversarial"),
-            "gold_label": gold_label,
-            "predicted_label": pred_label,
-            "labels_match": matches,
-            "format_correct": format_ok,
-            "model_response": (generated_text or "").strip(),
-            "generated_tokens": tokens,
-            "inference_seconds": dt,
-        }
+            is_adversarial = bool(example.get("adversarial") is True)
+            if is_adversarial:
+                adversarial_samples += 1
+                adversarial_label_matches += int(matches)
+                adversarial_format_matches += int(format_ok)
 
-        if idx < report_samples:
-            reported.append(sample_entry)
+            sample_entry = {
+                "sample_id": example.get("sample_id", idx),
+                "prompt": example["prompt"],
+                "rendered_string": rendered_string,
+                "adversarial": example.get("adversarial"),
+                "gold_label": gold_label,
+                "predicted_label": pred_label,
+                "labels_match": matches,
+                "format_correct": format_ok,
+                "model_response": (generated_text or "").strip(),
+                "generated_tokens": tokens,
+                "inference_seconds": batch_dt,
+            }
 
-        if not matches:
-            wrong_label_samples.append(sample_entry)
+            if idx < report_samples:
+                reported.append(sample_entry)
 
-        if not format_ok:
-            wrong_format_samples.append(sample_entry)
+            if not matches:
+                wrong_label_samples.append(sample_entry)
 
-        # delete later
-        if (idx != 0) and (idx % 100 == 0):
-            print(f"Accuracy at {idx}: {label_matches / idx}")
+            if not format_ok:
+                wrong_format_samples.append(sample_entry)
+
+        if batch_end != 0 and (batch_end % 100 == 0):
+            print(f"Accuracy at {batch_end}: {label_matches / batch_end}")
 
     accuracy = label_matches / total_samples if total_samples else 0.0
     format_accuracy = format_matches / total_samples if total_samples else 0.0
@@ -299,6 +355,7 @@ def check_output(
                 **GENERATION_CONFIG,
                 "eos_token_id": tokenizer.eos_token_id,
             },
+            "batch_size": effective_batch_size,
             "dataset": {
                 **dataset_info,
                 "total_samples": total_samples,
@@ -336,6 +393,7 @@ def main() -> None:
         print_samples=PRINT_SAMPLES,
         adapter_path=cli_adapter_path or default_adapter_path,
         dataset_key=DATASET_KEY,
+        batch_size=BATCH_SIZE,
     )
 
 
