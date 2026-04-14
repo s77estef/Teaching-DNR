@@ -2,20 +2,20 @@
   "mode": "gold_direction",
   "num_examples": 40,
   "mean_by_variant": {
-    "adequate_but_improvable": 0.9399999999999998,
-    "articulate_wrong_label": 0.08,
-    "insufficient": 0.67,
-    "perfect_articulate": 1.0
+    "adequate_but_improvable": 0.8200000000000001,
+    "articulate_wrong_label": 0.16,
+    "insufficient": 0.7000000000000001,
+    "perfect_articulate": 0.97
   },
   "mean_by_gold_and_variant": {
-    "harmful::adequate_but_improvable": 1.0,
+    "harmful::adequate_but_improvable": 0.9400000000000001,
     "harmful::articulate_wrong_label": 0.0,
     "harmful::insufficient": 0.7,
     "harmful::perfect_articulate": 1.0,
-    "unharmful::adequate_but_improvable": 0.8800000000000001,
-    "unharmful::articulate_wrong_label": 0.16,
-    "unharmful::insufficient": 0.64,
-    "unharmful::perfect_articulate": 1.0
+    "unharmful::adequate_but_improvable": 0.7,
+    "unharmful::articulate_wrong_label": 0.32,
+    "unharmful::insufficient": 0.7,
+    "unharmful::perfect_articulate": 0.9400000000000001
   },
   "prompt_ordering_checks": {
     "num_prompts": 10,
