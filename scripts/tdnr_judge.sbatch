@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=judge1090
+#SBATCH --job-name=mj1090
 #SBATCH --partition=A100short
 #SBATCH --time=08:00:00
 #SBATCH --gres=gpu:1
