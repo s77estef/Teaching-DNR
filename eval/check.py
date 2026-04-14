@@ -57,8 +57,8 @@ except ImportError:
 
 MODEL_ID = "Qwen/Qwen3-4B"
 # max non-Null: 1699
-PRINT_SAMPLES = 50
-TEST_SAMPLES = 50
+PRINT_SAMPLES = 1699
+TEST_SAMPLES = 1699
 
 ADAPTER_PATH = None
 #ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-test_20251205_164937_195803_merged/checkpoint-3000"
@@ -82,7 +82,7 @@ ADAPTER_PATH = None
 #ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-rubric_with_gold_direction_20260328_151255/checkpoint-600"
 #ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-rubric_plus_accuracy_20260330_175331/checkpoint-900"
 #ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-rubric_with_gold_direction_20260401_144711/checkpoint-350"
-ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-rubric_with_gold_direction_20260411_191018-5-16-10k/checkpoint-250"
+ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-rubric_with_gold_direction_20260409_215101-8-16/checkpoint-156"
 
 
 

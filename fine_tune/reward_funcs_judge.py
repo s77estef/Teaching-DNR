@@ -88,6 +88,8 @@ Return only a single tag in exactly this format:
 Rules for VALUE:
 - must be a decimal number between 0.0 and 1.0 inclusive
 - must use exactly one digit after the decimal point
+- the rubric levels 0.0, 0.4, 0.7, and 1.0 are anchor points, not the only allowed scores
+- you may use intermediate values such as 0.1, 0.2, 0.3, 0.5, 0.6, 0.8, or 0.9 when they better reflect the quality of the reasoning
 - choose the most appropriate score based on the rubric
 """
 
