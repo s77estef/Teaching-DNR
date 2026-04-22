@@ -10,7 +10,7 @@ from typing import Any, Callable, Dict, List
 import torch
 from datasets import Dataset
 from peft import LoraConfig, get_peft_model
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModelForCausalLM, AutoTokenizer, TrainerCallback
 from trl import GRPOConfig, GRPOTrainer
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -59,12 +59,15 @@ JUDGE_GRPO_TRAINING_CONFIG: Dict[str, object] = {
     "num_train_epochs": 1,
     "bf16": True,
     "max_completion_length": 512,
-    "num_generations": 4,
+    "num_generations": 2,
     "max_prompt_length": 1055, # 576(+12) for sys, 1043(+12) for gpt3
     "report_to": ["wandb"],
     "logging_steps": 10,
     "save_strategy": "steps",
-    "save_steps": 100,
+    "save_steps": 625, # is disabled when save_at_steps is non-empty
+    # check: 2, 2k: 125, 4k: 250, 5k: 312 6k: 375, 8k: 500, 10k: 625, 12k: 750, 13k: 875, end: 900
+    #"save_at_steps": [125, 250, 312, 375, 500, 625, 750, 875, 900],
+    "save_at_steps": [78, 156, 234, 312],
 }
 
 LORA_CONFIG: Dict[str, Any] = {
@@ -82,6 +85,24 @@ LORA_CONFIG: Dict[str, Any] = {
         "down_proj",
     ],
 }
+
+
+class SaveAtStepsCallback(TrainerCallback):
+    def __init__(self, save_steps: List[int]) -> None:
+        self.save_steps = set(int(step) for step in save_steps)
+
+    def on_step_end(self, args, state, control, **kwargs):
+        if state.global_step in self.save_steps:
+            control.should_save = True
+        return control
+
+
+def _resolve_checkpoint_steps(config: Dict[str, Any]) -> int | List[int] | None:
+    save_at_steps = config.get("save_at_steps")
+    if save_at_steps:
+        return [int(step) for step in save_at_steps]
+    save_steps = config.get("save_steps")
+    return int(save_steps) if save_steps else None
 
 
 def load_lora_model(lora_overrides: Dict[str, Any] | None = None) -> torch.nn.Module:
@@ -162,6 +183,7 @@ def format_gate_reward(completions, **_) -> List[float]:
 
 def build_training_args() -> GRPOConfig:
     config = copy.deepcopy(JUDGE_GRPO_TRAINING_CONFIG)
+    save_at_steps = config.pop("save_at_steps", None)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     model_name = MODEL_ID.split("/", 1)[-1]
     config["output_dir"] = str(
@@ -169,6 +191,9 @@ def build_training_args() -> GRPOConfig:
         / "trained_experiments"
         / f"{model_name}-GRPO-{REWARD_MODE}_{timestamp}"
     )
+    if save_at_steps:
+        config["save_strategy"] = "no"
+        config.pop("save_steps", None)
     return GRPOConfig(**config)
 
 
@@ -205,7 +230,7 @@ def run_trainer(
     _write_grpo_config(config_for_log, training_args.output_dir)
     _write_reward_source(training_args.output_dir)
 
-    save_steps = training_args.save_steps or config_for_log.get("save_steps")
+    save_steps = _resolve_checkpoint_steps(config_for_log)
     reward_logger = RewardLogger(
         model_id=MODEL_ID,
         system_prompt=SYSTEM_PROMPT,
@@ -223,6 +248,9 @@ def run_trainer(
         train_dataset=dataset,
     )
     trainer.add_callback(reward_logger.get_callback())
+    save_at_steps = config_for_log.get("save_at_steps") or []
+    if save_at_steps:
+        trainer.add_callback(SaveAtStepsCallback(save_at_steps))
     start_time = time.time()
     trainer.train()
     elapsed = time.time() - start_time

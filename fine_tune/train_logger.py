@@ -57,14 +57,6 @@ def _extract_system_user(prompt_val: Any) -> Tuple[str | None, str | None]:
     return None, str(prompt_val)
 
 
-def _should_activate_step(save_steps: int | List[int] | None, step: int) -> bool:
-    if step <= 0 or not save_steps:
-        return False
-    if isinstance(save_steps, int):
-        return step % save_steps == 0
-    return step in save_steps
-
-
 class RewardLogger:
     def __init__(
         self,
@@ -72,7 +64,7 @@ class RewardLogger:
         model_id: str,
         system_prompt: str,
         output_dir: str | Path,
-        save_steps: int | List[int] | None,
+        save_steps: int | None,
         num_funcs: int,
     ) -> None:
         self.model_id = model_id
@@ -136,7 +128,7 @@ class RewardLogger:
     def update_step(self, step: int, is_main_process: bool) -> None:
         self.current_step = step
         self.is_main_process = is_main_process
-        self.active = _should_activate_step(self.save_steps, step)
+        self.active = bool(self.save_steps) and step > 0 and step % int(self.save_steps) == 0
 
     def _write_reward_batch_log(self, step: int, payload: Dict[str, Any]) -> None:
         completions = payload.get("completions") or []
@@ -295,7 +287,7 @@ class SFTLogger:
         *,
         system_prompt: str,
         output_dir: str | Path,
-        save_steps: int | List[int] | None,
+        save_steps: int | None,
         generate_samples: int = 0,
         generation_config: Dict[str, Any] | None = None,
     ) -> None:
@@ -313,7 +305,7 @@ class SFTLogger:
     def update_step(self, step: int, is_main_process: bool) -> None:
         self.current_step = step
         self.is_main_process = is_main_process
-        self.active = _should_activate_step(self.save_steps, step)
+        self.active = bool(self.save_steps) and step > 0 and step % int(self.save_steps) == 0
 
     def _generate_for_prompt(
         self,
