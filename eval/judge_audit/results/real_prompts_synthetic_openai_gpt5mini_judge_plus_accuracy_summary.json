@@ -2,24 +2,24 @@
   "mode": "judge_plus_accuracy",
   "num_examples": 40,
   "mean_by_variant": {
-    "adequate_but_improvable": 0.7000000000000002,
-    "articulate_wrong_label": 0.32999999999999996,
-    "insufficient": 0.36,
-    "perfect_articulate": 0.8800000000000001
+    "adequate_but_improvable": 0.64,
+    "articulate_wrong_label": 0.16,
+    "insufficient": 0.19,
+    "perfect_articulate": 0.8400000000000001
   },
   "mean_by_gold_and_variant": {
-    "harmful::adequate_but_improvable": 0.8800000000000001,
+    "harmful::adequate_but_improvable": 0.8600000000000001,
     "harmful::articulate_wrong_label": 0.08,
-    "harmful::insufficient": 0.4,
-    "harmful::perfect_articulate": 1.0,
-    "unharmful::adequate_but_improvable": 0.52,
-    "unharmful::articulate_wrong_label": 0.5800000000000001,
-    "unharmful::insufficient": 0.32,
-    "unharmful::perfect_articulate": 0.76
+    "harmful::insufficient": 0.21999999999999997,
+    "harmful::perfect_articulate": 0.9800000000000001,
+    "unharmful::adequate_but_improvable": 0.42000000000000004,
+    "unharmful::articulate_wrong_label": 0.24,
+    "unharmful::insufficient": 0.16,
+    "unharmful::perfect_articulate": 0.7
   },
   "prompt_ordering_checks": {
     "num_prompts": 10,
-    "perfect_ge_adequate_rate": 1.0,
+    "perfect_ge_adequate_rate": 0.9,
     "adequate_ge_insufficient_rate": 1.0,
     "perfect_ge_wrong_rate": 1.0
   }
