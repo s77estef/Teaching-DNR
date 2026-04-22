@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH --job-name=mj1090
-#SBATCH --partition=A100short
-#SBATCH --time=08:00:00
+#SBATCH --job-name=j_only
+#SBATCH --partition=A100medium
+#SBATCH --time=1-00:00:00
 #SBATCH --gres=gpu:1
 #SBATCH --ntasks=1
 #SBATCH --output=logs/%x-%j.out

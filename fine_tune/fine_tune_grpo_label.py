@@ -55,7 +55,7 @@ MODEL_ID = "Qwen/Qwen3-4B"
 #MODEL_ID = "Qwen/Qwen3.5-4B"
 
 DEBUG = False
-NORMATIVE = False # changes system prompt for normative reasoning
+NORMATIVE = True # changes system prompt for normative reasoning
 
 if NORMATIVE:
     SYSTEM_PROMPT = SYSTEM_PROMPT_GPT3
@@ -100,20 +100,20 @@ GRPO_TRAINING_CONFIG_C = {
 GRPO_TRAINING_CONFIG_B = {
     "output_dir": OUTPUT_DIR,
     "learning_rate": 1e-5,
-    #"beta": 0.02, # KL regularization, keeps policy close to reference
+    "beta": 0.025,
     "remove_unused_columns": False,
     # pdtbs 8: 37GB, pdtbs 16: 41-OOM
     # good: pdtbs 21, gas none, 43GB
-    "per_device_train_batch_size": 20,
+    "per_device_train_batch_size": 5,
     # gas 16: 37GB, gas 8: 38GB
-    "gradient_accumulation_steps": 6,
+    "gradient_accumulation_steps": 16,
     # with: 26GB, without: 37GB
     #"gradient_checkpointing": True,
     "num_train_epochs": 1,
     "bf16": True,
     "max_completion_length": 512,
     "num_generations": 4,
-    "temperature": 0.7, # (default 1.0) 2.0 is way too much
+    #"temperature": 0.7, # (default 1.0) 2.0 is way too much
     #"top_p": 0.8, # (default 1.0) keep smallest set of tokens whose cumulative probability ≥ p
     #"top_k": 50, # (default None) keep k most probable tokens
     #"min_p": 0.05, # discard any token whose individual probability < p
@@ -121,13 +121,13 @@ GRPO_TRAINING_CONFIG_B = {
     #"generation_kwargs": {
     #    "do_sample": True,
     #},
-    "max_prompt_length": 256,
+    "max_prompt_length": 1055,
     "report_to": ["wandb"],
     "logging_steps": 10,
     "save_strategy": "steps",
-    "save_steps": 25,
+    "save_steps": 50,
 }
-GRPO_TRAINING_CONFIG = GRPO_TRAINING_CONFIG_C
+GRPO_TRAINING_CONFIG = GRPO_TRAINING_CONFIG_B
 
 LORA_CONFIG: Dict[str, Any] = {
     "task_type": "CAUSAL_LM",
@@ -289,7 +289,7 @@ def run_trainer(
     start_time = time.time()
     trainer.train()
     elapsed = time.time() - start_time
-    #trainer.train(resume_from_checkpoint="fine_tune/trained_experiments/Qwen3-4B-SFT-test_20260210_120620/checkpoint-79")
+    trainer.train(resume_from_checkpoint="fine_tune/trained_experiments/Qwen3-4B-GRPO-rubric_plus_accuracy_20260422_011719/checkpoint-500")
     trainer.save_model(training_args.output_dir)
     final_results = {
         "final_steps": trainer.state.global_step,

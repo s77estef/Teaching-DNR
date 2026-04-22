@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=tdnr
-#SBATCH --partition=A100devel
-#SBATCH --time=01:00:00
+#SBATCH --partition=A100medium
+#SBATCH --time=1-00:00:00
 #SBATCH --gres=gpu:1
 #SBATCH --ntasks=1
 #SBATCH --output=logs/%x-%j.out
