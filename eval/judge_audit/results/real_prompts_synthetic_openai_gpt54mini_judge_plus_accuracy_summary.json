@@ -1,0 +1,26 @@
+{
+  "mode": "judge_plus_accuracy",
+  "num_examples": 40,
+  "mean_by_variant": {
+    "adequate_but_improvable": 0.8699999999999999,
+    "articulate_wrong_label": 0.41,
+    "insufficient": 0.3000000000000001,
+    "perfect_articulate": 0.8400000000000001
+  },
+  "mean_by_gold_and_variant": {
+    "harmful::adequate_but_improvable": 0.9,
+    "harmful::articulate_wrong_label": 0.12,
+    "harmful::insufficient": 0.42000000000000004,
+    "harmful::perfect_articulate": 0.9,
+    "unharmful::adequate_but_improvable": 0.8400000000000001,
+    "unharmful::articulate_wrong_label": 0.7,
+    "unharmful::insufficient": 0.18000000000000002,
+    "unharmful::perfect_articulate": 0.78
+  },
+  "prompt_ordering_checks": {
+    "num_prompts": 10,
+    "perfect_ge_adequate_rate": 0.8,
+    "adequate_ge_insufficient_rate": 1.0,
+    "perfect_ge_wrong_rate": 0.9
+  }
+}
