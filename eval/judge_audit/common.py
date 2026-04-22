@@ -484,13 +484,17 @@ def load_audit_rows(path: Path) -> List[Dict[str, Any]]:
 
 
 def build_messages_for_mode(example: Dict[str, Any], mode: str) -> List[Dict[str, str]]:
-    from fine_tune.reward_funcs_judge import GOLD_DIRECTION_RUBRIC, JUDGE_RUBRIC, _build_judge_messages
+    from fine_tune.reward_funcs_judge import (
+        ACTIVE_GOLD_DIRECTION_RUBRIC,
+        ACTIVE_JUDGE_RUBRIC,
+        _build_judge_messages,
+    )
 
     if mode == "rubric_only":
-        rubric = JUDGE_RUBRIC
+        rubric = ACTIVE_JUDGE_RUBRIC
         gold_label = None
     elif mode == "gold_direction":
-        rubric = GOLD_DIRECTION_RUBRIC
+        rubric = ACTIVE_GOLD_DIRECTION_RUBRIC
         gold_label = example.get("gold_label")
     else:
         raise ValueError(f"Unsupported mode: {mode}")
