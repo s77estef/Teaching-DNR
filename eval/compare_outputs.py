@@ -76,6 +76,12 @@ def _label_flip_counts(samples: Iterable[Dict[str, Any]]) -> Counter[str]:
     return counter
 
 
+def _format_count_with_share(count: int, total: int) -> str:
+    if not total:
+        return "0 (  0.00%)"
+    return f"{count} ({100.0 * count / total:6.2f}%)"
+
+
 def _filter_run(run: RunSummary, predicate: Callable[[Dict[str, Any]], bool]) -> RunSummary:
     return RunSummary(
         name=run.name,
@@ -123,8 +129,9 @@ def _collect_sample_rows(runs: Sequence[RunSummary]) -> List[Dict[str, Any]]:
 def add_run_summary_section(report: ReportBuffer, runs: Sequence[RunSummary]) -> None:
     report.line("=== Run Summary ===")
     header = (
-        f"{'run':<33} {'label_acc':>10} {'format_acc':>10} "
-        f"{'wrong_lbl':>10} {'wrong_fmt':>10} {'top_flips':>24}"
+        f"{'run':<33} {'label_acc_cf':>12} {'label_acc':>10} {'format_acc':>10} "
+        f"{'wrong_lbl_cf':>12} {'wrong_total':>11} {'wrong_fmt':>10} "
+        f"{'harmful -> unharmful':>23} {'unharmful -> harmful':>23}"
     )
     report.line(header)
     report.line("-" * len(header))
@@ -132,18 +139,33 @@ def add_run_summary_section(report: ReportBuffer, runs: Sequence[RunSummary]) ->
         total = len(run.samples)
         wrong_label = sum(not sample["labels_match"] for sample in run.samples)
         wrong_format = sum(not sample["format_correct"] for sample in run.samples)
+        correct_format_samples = [sample for sample in run.samples if sample["format_correct"]]
+        label_acc_correct_format = (
+            sum(sample["labels_match"] for sample in correct_format_samples)
+            / len(correct_format_samples)
+            if correct_format_samples
+            else 0.0
+        )
+        wrong_label_correct_format = sum(
+            not sample["labels_match"] for sample in correct_format_samples
+        )
         label_acc = (total - wrong_label) / total if total else 0.0
         format_acc = (total - wrong_format) / total if total else 0.0
-        top_flips = ", ".join(
-            f"{flip}:{count}" for flip, count in _label_flip_counts(run.samples).most_common(2)
-        )
+        flip_counts = _label_flip_counts(correct_format_samples)
+        harmful_to_unharmful = flip_counts["harmful->unharmful"]
+        unharmful_to_harmful = flip_counts["unharmful->harmful"]
+        total_binary_flips = harmful_to_unharmful + unharmful_to_harmful
         report.line(
             f"{run.name:<33} "
+            f"{_format_ratio(label_acc_correct_format):>12} "
             f"{_format_ratio(label_acc):>10} "
             f"{_format_ratio(format_acc):>10} "
-            f"{wrong_label:>10} {wrong_format:>10} "
-            f"{top_flips[:24]:>24}"
+            f"{wrong_label_correct_format:>12} {wrong_label:>11} {wrong_format:>10} "
+            f"{_format_count_with_share(harmful_to_unharmful, total_binary_flips):>23} "
+            f"{_format_count_with_share(unharmful_to_harmful, total_binary_flips):>23}"
         )
+    report.line("label_acc_cf = label accuracy computed only over format-correct samples.")
+    report.line("wrong_lbl_cf = wrong-label count computed only over format-correct samples.")
     report.line()
 
 

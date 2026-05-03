@@ -1,0 +1,203 @@
+Judge Quality Control for the Normative Reasoning Reward Model
+==============================================================
+
+Purpose
+-------
+
+The goal of this judge quality control step was to test whether the local judge used for
+rewarding normative reasoning behaves in a useful and interpretable way before using it
+as a reward signal in GRPO training. In this project, the judge is not only expected to
+reward the final harmful/unharmful label, but also the quality of the normative
+reasoning that supports the label. This is important because a model could otherwise
+receive reward for a correct label while giving shallow, misleading, or poorly grounded
+reasoning.
+
+Several audit datasets were present during development, but the final quality-control
+interpretation reported here is based on:
+
+  eval/judge_audit/real_prompts_synthetic_reasoning_v1.jsonl
+
+This dataset was chosen because it combines realistic adversarial prompts with controlled
+synthetic reasoning variants. It therefore tests the judge on prompts that resemble the
+actual training/evaluation setting while still making it possible to know in advance
+which reasoning variants should receive higher or lower scores.
+
+Audit Dataset
+-------------
+
+The final dataset contains 40 examples derived from 10 real adversarial prompts. For
+each prompt, four synthetic completion variants were included:
+
+  1. perfect_articulate:
+     A well-structured reasoning trace that supports the correct gold label.
+
+  2. adequate_but_improvable:
+     A mostly correct but weaker reasoning trace.
+
+  3. articulate_wrong_label:
+     A fluent and plausible-looking reasoning trace that supports the wrong final label.
+
+  4. insufficient:
+     A weak, missing, or substantially underdeveloped reasoning trace.
+
+The prompts are adversarial by construction and cover cases where superficial framing can
+hide the actual risk, for example privacy invasion, stereotyping, cyber misuse, or
+requests framed as fictional, educational, or authorized. This makes the audit more
+diagnostic than a random set of easy examples, because the judge has to attend to the
+substantive safety-relevant reasoning rather than only surface fluency.
+
+Judging Procedure
+-----------------
+
+The local judge under evaluation was:
+
+  opencompass/CompassJudger-1-1.5B-Instruct
+
+It was evaluated in two reward modes:
+
+  1. gold_direction:
+     The judge received the gold harmful/unharmful direction and was expected to reward
+     reasoning that correctly supports that direction. The ideal ranking was:
+
+       perfect_articulate > adequate_but_improvable > articulate_wrong_label > insufficient
+
+  2. judge_plus_accuracy:
+     The reward included the judge score together with label correctness. In this setup,
+     an articulate completion with the wrong label can still receive some credit for
+     reasoning quality, but should remain below a correct and well-reasoned answer. The
+     ideal ranking used in the rank-order analysis was:
+
+       perfect_articulate > articulate_wrong_label > adequate_but_improvable > insufficient
+
+For each mode, the audit measured:
+
+  - mean score by reasoning variant;
+  - mean score by gold label and variant;
+  - per-prompt ordering checks;
+  - exact rank-order match against the expected ordering;
+  - pairwise ranking accuracy across all variant pairs.
+
+OpenAI-based judges were also scored during development as reference points. These
+results were useful for comparison, but the final practical decision concerns whether the
+small local CompassJudger is good enough to use as the first reward model for exploration.
+
+Main Findings
+-------------
+
+1. CompassJudger clearly rewards the best reasoning in gold_direction mode.
+
+In gold_direction mode, CompassJudger assigned the highest average score to
+perfect_articulate reasoning:
+
+  - perfect_articulate:        0.81
+  - adequate_but_improvable:   0.26
+  - articulate_wrong_label:    0.30
+  - insufficient:              0.00
+
+The strongest result is that perfect_articulate reasoning was ranked above adequate,
+wrong-label, and insufficient reasoning for every prompt in the simple pairwise checks:
+
+  - perfect >= adequate:       100%
+  - adequate >= insufficient:  100%
+  - perfect >= wrong-label:    100%
+
+The full rank-order match was 60%, and pairwise ranking accuracy was 78.3%. This means
+that the judge does not always reproduce the complete intended ordering, but it usually
+gets the important pairwise distinctions right, especially the distinction between strong
+correct reasoning and weak or incorrect reasoning.
+
+2. The judge is conservative toward insufficient reasoning.
+
+Across both modes, insufficient reasoning received a mean score of 0.00 from
+CompassJudger. This is desirable for GRPO reward shaping, because it reduces the chance
+that the training process rewards empty or superficial normative reasoning. It also
+suggests that the judge is sensitive to whether a completion contains a substantive
+justification rather than only the correct answer tag.
+
+3. CompassJudger is less stable when separating reasoning quality from label correctness.
+
+In judge_plus_accuracy mode, CompassJudger scores were:
+
+  - perfect_articulate:        0.70
+  - articulate_wrong_label:    0.51
+  - adequate_but_improvable:   0.16
+  - insufficient:              0.00
+
+The exact rank-order match was 50%, and pairwise ranking accuracy was 75.8%. The judge
+still gives the highest average score to the perfect variant and the lowest score to the
+insufficient variant. However, it sometimes gives relatively high scores to articulate
+wrong-label reasoning. This indicates that the judge values fluent and safety-relevant
+reasoning even when the final label is wrong, which is useful in one sense but risky if
+label correctness is not sufficiently enforced elsewhere in the reward function.
+
+4. Performance differs between harmful and unharmful gold labels.
+
+In gold_direction mode, perfect_articulate examples with harmful gold labels received a
+very high mean score of 0.98, while perfect_articulate examples with unharmful gold
+labels received a lower mean score of 0.64. This suggests that the judge may be more
+confident when evaluating harmful-direction reasoning than when evaluating unharmful
+reasoning. A possible explanation is that safety-relevant harmful reasoning contains more
+explicit risk cues, while correct unharmful reasoning often requires recognizing the
+absence of actionable harm or misuse.
+
+5. Compared with larger reference judges, CompassJudger is less smooth but more useful
+than expected for its size.
+
+The OpenAI reference judges generally assigned very high scores to perfect and adequate
+reasoning, but some reference runs also gave high scores to insufficient variants. For
+example, in gold_direction mode, GPT-4o-mini scored insufficient reasoning at 0.89 on
+average, and GPT-5.4-mini scored it at 0.79 on average. CompassJudger was much harsher
+on insufficient reasoning, assigning it 0.00. This makes CompassJudger attractive for
+reward-model exploration, because the GRPO setup benefits from a judge that strongly
+penalizes missing or shallow reasoning.
+
+At the same time, CompassJudger is not perfect. Its average score for articulate wrong
+labels is not always lower than adequate reasoning, and its exact rank-order accuracy is
+moderate rather than high. Therefore, it should be treated as a practical first-choice
+judge for experimentation, not as a final validated evaluator.
+
+Conclusion
+----------
+
+Overall, the audit supports using CompassJudger as the first local judge for exploring
+judge-reward GRPO training. For a 1.5B-parameter judge model, it performs surprisingly
+well on the most important quality-control criteria: it strongly rewards articulate
+correct reasoning, reliably rejects insufficient reasoning, and usually preserves the
+expected pairwise ordering between strong and weak completions.
+
+The main limitation is that CompassJudger still confuses some finer distinctions,
+especially between fluent wrong-label reasoning and weaker correct reasoning. This means
+that the judge reward should not be interpreted as a perfect scientific measurement of
+normative reasoning quality. Instead, it is a compact, local, and reasonably aligned
+reward signal that is good enough for initial GRPO experiments, provided that results are
+monitored with separate evaluation and manual inspection.
+
+Future Improvements
+-------------------
+
+Future work could improve the judge quality-control setup in several ways:
+
+  1. Expand the audit set beyond 10 prompts while keeping the controlled four-variant
+     structure. This would make the rank-order statistics more reliable.
+
+  2. Add more unharmful examples, because the current results suggest that CompassJudger
+     may be less confident when rewarding correct unharmful reasoning.
+
+  3. Separate reasoning quality and label correctness more explicitly in the reward
+     design. This would reduce the risk that fluent but wrong-label completions receive
+     too much reward.
+
+  4. Calibrate CompassJudger scores against a small manually annotated validation set,
+     rather than relying only on synthetic variant labels.
+
+  5. Add disagreement analysis between CompassJudger and stronger reference judges to
+     identify systematic failure cases, such as over-rewarding fluent but incorrect
+     rationales or under-rewarding concise but sufficient reasoning.
+
+  6. Periodically re-run this audit after reward-function changes, model checkpoint
+     changes, or prompt-template changes, so that the reward signal remains stable across
+     training iterations.
+
+In summary, CompassJudger is not a final gold-standard judge, but the audit results show
+that it is a strong and practical first choice for local experimentation with judge-based
+GRPO reward training.

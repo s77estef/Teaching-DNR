@@ -1,5 +1,5 @@
 Compare Outputs Report
-Generated at UTC: 2026-03-29 17:57:23
+Generated at UTC: 2026-05-03 09:40:17
 Runs compared: 6
 Samples in scope: 1699
 Input files:
@@ -11,14 +11,16 @@ Input files:
 - eval/to_compare/base_think.json
 
 === Run Summary ===
-run                                label_acc format_acc  wrong_lbl  wrong_fmt                top_flips
-------------------------------------------------------------------------------------------------------
-adv_normative                         88.35%     99.59%        198          7 harmful->unharmful:138, 
-adv_think                             88.23%     99.82%        200          3 harmful->unharmful:125, 
-all_normative                         87.46%    100.00%        213          0 harmful->unharmful:147, 
-all_think                             87.11%     99.76%        219          4 harmful->unharmful:139, 
-base_normative                        81.52%     99.23%        314         13 harmful->unharmful:278, 
-base_think                            82.05%     98.35%        305         28 harmful->unharmful:229, 
+run                               label_acc_cf  label_acc format_acc wrong_lbl_cf wrong_total  wrong_fmt    harmful -> unharmful    unharmful -> harmful
+--------------------------------------------------------------------------------------------------------------------------------------------------------
+adv_normative                           88.71%     88.35%     99.59%          191         198          7           138 ( 72.25%)            53 ( 27.75%)
+adv_think                               88.38%     88.23%     99.82%          197         200          3           125 ( 63.45%)            72 ( 36.55%)
+all_normative                           87.46%     87.46%    100.00%          213         213          0           147 ( 69.01%)            66 ( 30.99%)
+all_think                               87.32%     87.11%     99.76%          215         219          4           139 ( 64.65%)            76 ( 35.35%)
+base_normative                          82.15%     81.52%     99.23%          301         314         13           278 ( 92.36%)            23 (  7.64%)
+base_think                              83.42%     82.05%     98.35%          277         305         28           229 ( 82.67%)            48 ( 17.33%)
+label_acc_cf = label accuracy computed only over format-correct samples.
+wrong_lbl_cf = wrong-label count computed only over format-correct samples.
 
 === Wrong-Label Overlap (Jaccard / shared) ===
 adv_normative                     vs adv_think                         jaccard=0.531 shared=138 left_only= 60 right_only= 62
