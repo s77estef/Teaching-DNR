@@ -46,7 +46,7 @@ if NORMATIVE:
     SYSTEM_PROMPT = SYSTEM_PROMPT_GPT3
 
 # one of "rubric_only", "rubric_plus_accuracy", "rubric_with_gold_direction"
-REWARD_MODE = "rubric_plus_accuracy"
+REWARD_MODE = "rubric_with_gold_direction"
 GRPO_CONFIG_FILENAME = "grpo_config.json"
 REWARD_SOURCE_FILENAME = "reward_funcs.py"
 
