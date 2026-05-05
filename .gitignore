@@ -13,6 +13,7 @@ fine_tune/fine_tune_grpo_label_2.py
 eval/eval_datasets.txt
 eval/check_*
 eval/to_compare_wrong
+eval/to_compare_512_old
 atexstuff
 
 environment_scratch.yml
