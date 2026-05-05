@@ -15,6 +15,9 @@ eval/check_*
 eval/to_compare_wrong
 eval/to_compare_512_old
 atexstuff
+eval/judge_audit/old
+fine_tune/old
+
 
 environment_scratch.yml
 
