@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=j_only
+#SBATCH --job-name=j_gold
 #SBATCH --partition=A100medium
 #SBATCH --time=1-00:00:00
 #SBATCH --gres=gpu:1

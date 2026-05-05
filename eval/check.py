@@ -82,17 +82,18 @@ ADAPTER_PATH = None
 #ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-rubric_with_gold_direction_20260328_151255/checkpoint-600"
 #ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-rubric_plus_accuracy_20260330_175331/checkpoint-900"
 #ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-rubric_with_gold_direction_20260401_144711/checkpoint-350"
-ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-rubric_with_gold_direction_20260409_215101-8-16/checkpoint-156"
+#ADAPTER_PATH = FINE_TUNE_DIR / "trained_experiments/Qwen3-4B-GRPO-rubric_with_gold_direction_20260409_215101-8-16/checkpoint-156"
 
 
 
-
-DATASET_KEY = "wildguardmix_test"
+# Available dataset keys:
+# wildguardmix_test, dnr, jailbreakbench, wildjailbreak
+DATASET_KEY = "dnr"
 GENERATION_CONFIG = {
     "max_new_tokens": 1024,
     "do_sample": False,
 }
-BATCH_SIZE = 8
+BATCH_SIZE = 128
 NORMATIVE = True
 if NORMATIVE:
     SYSTEM_PROMPT = SYSTEM_PROMPT_GPT3

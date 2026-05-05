@@ -2,6 +2,7 @@ random
 old
 data_creation
 logs
+utils_old
 fine_tune/wildguard.py
 fine_tune/trained_experiments
 fine_tune/trained_experiments_wrong
@@ -11,6 +12,8 @@ fine_tune/fine_tune_grpo_label_na.py
 fine_tune/fine_tune_grpo_label_2.py
 eval/eval_datasets.txt
 eval/check_*
+eval/to_compare_wrong
+atexstuff
 
 environment_scratch.yml
 
